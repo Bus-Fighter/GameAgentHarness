@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://game-agent-harness.local/schemas/manifest.schema.json",
+  "title": "Game Agent Harness Trace Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "traceId", "startedAt", "counts"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "traceId": { "type": "string", "minLength": 1 },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "counts": {
+      "type": "object",
+      "required": ["events", "snapshots", "logs", "validations"],
+      "properties": {
+        "events": { "type": "integer", "minimum": 0 },
+        "snapshots": { "type": "integer", "minimum": 0 },
+        "logs": { "type": "integer", "minimum": 0 },
+        "validations": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

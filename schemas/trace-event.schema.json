@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://game-agent-harness.local/schemas/trace-event.schema.json",
+  "title": "Game Agent Harness Trace Event",
+  "type": "object",
+  "required": ["seq", "traceId", "receivedAt", "source", "type", "data"],
+  "properties": {
+    "seq": { "type": "integer", "minimum": 1 },
+    "traceId": { "type": "string", "minLength": 1 },
+    "receivedAt": { "type": "string", "format": "date-time" },
+    "source": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "minLength": 1 },
+    "engine": {
+      "type": ["object", "null"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "project": {
+      "type": ["object", "null"],
+      "properties": {
+        "name": { "type": "string" },
+        "root": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "frame": { "type": ["integer", "null"] },
+    "engineTimeMs": { "type": ["integer", "number", "null"] },
+    "entity": {
+      "type": ["object", "null"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rawKind": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

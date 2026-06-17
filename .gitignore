@@ -1,0 +1,5 @@
+node_modules/
+traces/*
+!traces/.gitkeep
+.DS_Store
+*.log

@@ -1,0 +1,19 @@
+{
+  "name": "game-agent-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Trace-first runtime evidence harness for game development agents.",
+  "bin": {
+    "harness": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node ./src/cli.js host start",
+    "test": "node --test",
+    "sample": "node ./src/cli.js dev emit-sample",
+    "summary": "node ./src/cli.js trace summarize latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

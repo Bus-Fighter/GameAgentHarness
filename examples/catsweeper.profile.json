@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "projectName": "CatSweeper",
+  "engine": "godot",
+  "semanticEntities": [
+    {
+      "role": "stage_controller",
+      "match": { "nodeName": "StageController" }
+    },
+    {
+      "role": "stage_map",
+      "match": { "nodeName": "StageMap" }
+    },
+    {
+      "role": "grid_session",
+      "match": { "className": "GridSession" }
+    },
+    {
+      "role": "player_health",
+      "match": { "className": "PlayerHealthSystem" }
+    },
+    {
+      "role": "player_progression",
+      "match": { "className": "PlayerProgressionSystem" }
+    }
+  ],
+  "interestingSignals": [
+    "OnStageInitialized"
+  ],
+  "interestingEventTypes": [
+    "input.pointer.pressed",
+    "game.reveal.result",
+    "state.sampled",
+    "validation.assertion"
+  ]
+}
