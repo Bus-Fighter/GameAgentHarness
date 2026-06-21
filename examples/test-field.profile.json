@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "Harness Test Field",
+    "root": "examples/test-field"
+  },
+  "engine": {
+    "name": "generic-test-engine",
+    "version": "0.1"
+  },
+  "traceDir": "../traces",
+  "importantEntities": [
+    {
+      "role": "player",
+      "match": { "entityName": "Player" }
+    },
+    {
+      "role": "enemy",
+      "match": { "entityName": "TrainingBot" }
+    },
+    {
+      "role": "hud",
+      "match": { "entityName": "HUD" }
+    }
+  ],
+  "semanticEvents": [
+    {
+      "type": "entity.spawned",
+      "description": "A runtime entity was created or entered the scene."
+    },
+    {
+      "type": "combat.damage_applied",
+      "description": "Damage was applied from one runtime entity to another."
+    },
+    {
+      "type": "player.hp_changed",
+      "description": "The player health state changed."
+    },
+    {
+      "type": "inventory.item_added",
+      "description": "The player inventory gained an item."
+    },
+    {
+      "type": "ui.hud_updated",
+      "description": "HUD state changed after gameplay state changed."
+    }
+  ],
+  "validationScenarios": [
+    "test-field.validation.json"
+  ],
+  "safety": {
+    "defaultMode": "read-only trace inspection",
+    "allowEngineActions": false
+  }
+}

@@ -1,8 +1,15 @@
 {
   "schemaVersion": 1,
-  "projectName": "CatSweeper",
-  "engine": "godot",
-  "semanticEntities": [
+  "project": {
+    "name": "CatSweeper",
+    "root": "../.."
+  },
+  "engine": {
+    "name": "godot",
+    "version": "4.x"
+  },
+  "traceDir": "../traces",
+  "importantEntities": [
     {
       "role": "stage_controller",
       "match": { "nodeName": "StageController" }
@@ -27,10 +34,39 @@
   "interestingSignals": [
     "OnStageInitialized"
   ],
-  "interestingEventTypes": [
-    "input.pointer.pressed",
-    "game.reveal.result",
-    "state.sampled",
-    "validation.assertion"
-  ]
+  "semanticEvents": [
+    {
+      "type": "input.pointer.pressed",
+      "description": "Player clicked or touched the stage."
+    },
+    {
+      "type": "game.reveal.result",
+      "description": "Grid reveal or mine/cat catch result."
+    },
+    {
+      "type": "player.hp_changed",
+      "description": "Player HP changed after gameplay logic."
+    },
+    {
+      "type": "player.exp_changed",
+      "description": "Player EXP changed after a catch/reveal event."
+    },
+    {
+      "type": "ui.hud_updated",
+      "description": "HUD display changed after gameplay state changed."
+    },
+    {
+      "type": "state.sampled",
+      "description": "Periodic runtime state sample."
+    },
+    {
+      "type": "validation.assertion",
+      "description": "A validation assertion result."
+    }
+  ],
+  "validationScenarios": [],
+  "safety": {
+    "defaultMode": "read-only trace inspection",
+    "allowEngineActions": false
+  }
 }

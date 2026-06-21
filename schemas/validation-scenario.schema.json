@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://game-agent-harness.local/schemas/validation-scenario.schema.json",
+  "title": "Game Agent Harness Validation Scenario",
+  "type": "object",
+  "required": ["schemaVersion", "name", "expect"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "expect": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["event", "latestSnapshot", "validation", "entitySeen", "timelineOrder", "noErrors"]
+          },
+          "name": { "type": "string" },
+          "eventType": { "type": "string" },
+          "stream": { "type": "string" },
+          "where": { "type": "object", "additionalProperties": true },
+          "atLeast": { "type": "integer", "minimum": 0 },
+          "path": { "type": "string" },
+          "equals": true,
+          "pass": { "type": "boolean" },
+          "role": { "type": "string" },
+          "eventTypes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

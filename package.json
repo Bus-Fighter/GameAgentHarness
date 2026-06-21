@@ -11,7 +11,10 @@
     "start": "node ./src/cli.js host start",
     "test": "node --test",
     "sample": "node ./src/cli.js dev emit-sample",
-    "summary": "node ./src/cli.js trace summarize latest"
+    "summary": "node ./src/cli.js trace summarize latest",
+    "test-field": "node ./src/cli.js dev create-test-field --profile examples/test-field.profile.json",
+    "context": "node ./src/cli.js context current latest --profile examples/test-field.profile.json",
+    "validate:test-field": "node ./src/cli.js validate scenario --scenario examples/test-field.validation.json --profile examples/test-field.profile.json"
   },
   "engines": {
     "node": ">=20"

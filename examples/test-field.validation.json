@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "test-field-basic-runtime-proof",
+  "description": "Validates that a generic game trace captures runtime state, semantic gameplay events, UI synchronization, and no errors.",
+  "expect": [
+    {
+      "kind": "event",
+      "name": "runtime started",
+      "eventType": "runtime.started",
+      "atLeast": 1
+    },
+    {
+      "kind": "event",
+      "name": "player hp changed to two",
+      "eventType": "player.hp_changed",
+      "where": { "data.hp": 2 },
+      "atLeast": 1
+    },
+    {
+      "kind": "latestSnapshot",
+      "name": "latest snapshot includes player hp",
+      "path": "data.player.hp",
+      "equals": 2
+    },
+    {
+      "kind": "validation",
+      "name": "hud hp validation passed",
+      "pass": true,
+      "where": { "data.name": "player hp and hud stayed synchronized" },
+      "atLeast": 1
+    },
+    {
+      "kind": "entitySeen",
+      "name": "player entity observed",
+      "role": "player"
+    },
+    {
+      "kind": "timelineOrder",
+      "name": "input caused hp update",
+      "eventTypes": ["input.pointer.pressed", "combat.damage_applied", "player.hp_changed", "ui.hud_updated"]
+    },
+    {
+      "kind": "noErrors",
+      "name": "trace is error free"
+    }
+  ]
+}

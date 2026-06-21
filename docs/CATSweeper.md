@@ -1,20 +1,23 @@
 # CatSweeper Test Notes
 
 CatSweeper is a target project for testing the harness. The harness remains a
-separate project.
+separate project, but it is usually checked out inside CatSweeper as the
+`Tools/GameAgentHarness` submodule.
 
-## Manual Test
+## Manual Test From CatSweeper
 
-From the harness project:
+From the CatSweeper repo root:
 
 ```bash
+cd Tools/GameAgentHarness
 npm start
 ```
 
-Install the Godot adapter into CatSweeper:
+CatSweeper already contains the Godot adapter under `addons/game_agent_harness`.
+If a fresh project needs the adapter installed, run this from the harness root:
 
 ```bash
-node ./src/cli.js godot install-adapter --project /Users/yuenlamfelix/Documents/CS/Godot/CatSweeper
+node ./src/cli.js godot install-adapter --project ../..
 ```
 
 Then in Godot:
@@ -35,15 +38,30 @@ Expected trace evidence:
 - `input.pointer.pressed`
 - `state.sampled`
 
-Summarize the latest trace:
+Useful agent commands from the harness root:
 
 ```bash
-node ./src/cli.js trace summarize latest
+node ./src/cli.js trace list --profile examples/catsweeper.profile.json
+node ./src/cli.js trace summarize latest --profile examples/catsweeper.profile.json
+node ./src/cli.js context current latest --profile examples/catsweeper.profile.json
+node ./src/cli.js trace inspect latest --profile examples/catsweeper.profile.json --stream all --limit 30
 ```
 
-## Current Scope
+## Generic Harness Test Field
 
-This first adapter records generic Godot editor/runtime context. It does not
+The generic test field does not require Godot. It demonstrates profile loading,
+semantic events, snapshots, validation, evidence artifacts, and viewer export:
+
+```bash
+npm run test-field
+npm run context
+npm run validate:test-field
+node ./src/cli.js viewer export latest --profile examples/test-field.profile.json --output /tmp/game-agent-harness-test-field.html
+```
+
+## Current CatSweeper Scope
+
+The first adapter records generic Godot editor/runtime context. It does not yet
 instrument CatSweeper gameplay classes directly.
 
 The next useful CatSweeper-specific layer is semantic events around:
