@@ -343,13 +343,9 @@ export default function App() {
   }, [connected, sendControl]);
 
   useEffect(() => {
-    if (!connected) return;
-    if (runtimeRunning) {
-      setRuntimeCaptureEnabled(recordingPreference);
-      sendControl("runtime_capture", { enabled: recordingPreference });
-    } else {
-      setRuntimeCaptureEnabled(false);
-    }
+    if (!connected || !runtimeRunning) return;
+    setRuntimeCaptureEnabled(recordingPreference);
+    sendControl("runtime_capture", { enabled: recordingPreference });
   }, [connected, runtimeRunning, recordingPreference, sendControl]);
 
   const engineConnected = (status?.engineClients ?? 0) > 0;

@@ -108,6 +108,8 @@ export const EventsPanel = memo(function EventsPanel({
     return logs.filter((log) => LEVEL_ORDER[log.level] >= LEVEL_ORDER[logLevel]);
   }, [logs, logLevel]);
 
+  const [selectedEvent, setSelectedEvent] = useState<HarnessEvent | null>(null);
+
   const reversedEvents = useMemo(() => [...events].reverse(), [events]);
   const reversedLogs = useMemo(() => [...filteredLogs].reverse(), [filteredLogs]);
 
@@ -118,7 +120,12 @@ export const EventsPanel = memo(function EventsPanel({
       ) : (
         <ul className="divide-y divide-[var(--border)]">
           {reversedEvents.map((ev) => (
-            <li key={ev.seq} className="flex items-start gap-3 p-3" style={{ fontSize: `${fontSize}px` }}>
+            <li
+              key={ev.seq}
+              onClick={() => setSelectedEvent(ev)}
+              className="flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-[var(--surface-2)]"
+              style={{ fontSize: `${fontSize}px` }}
+            >
               <span className={`mt-0.5 text-xs font-semibold ${eventClass(ev.type)}`}>
                 {eventIcon(ev.type)}
               </span>
@@ -247,6 +254,29 @@ export const EventsPanel = memo(function EventsPanel({
         <ViewTransition enter="scale-in" exit="scale-out" default="none">
           <FullscreenOverlay title={activeSubTab === "events" ? "Event Stream" : "Engine Logs"} onClose={() => setFullscreen(false)}>
             <section className="flex h-full min-h-0 flex-col">{content}</section>
+          </FullscreenOverlay>
+        </ViewTransition>
+      )}
+      {selectedEvent && (
+        <ViewTransition enter="scale-in" exit="scale-out" default="none">
+          <FullscreenOverlay title={`Event #${selectedEvent.seq}`} onClose={() => setSelectedEvent(null)}>
+            <div className="flex h-full flex-col gap-3 overflow-auto p-4" style={{ fontSize: `${fontSize}px` }}>
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <span className="text-[var(--muted)]">Type</span>
+                <span className="font-medium text-[var(--text)]">{selectedEvent.type}</span>
+                <span className="text-[var(--muted)]">Source</span>
+                <span className="text-[var(--text)]">{selectedEvent.source || "-"}</span>
+                <span className="text-[var(--muted)]">Seq</span>
+                <span className="text-[var(--text)]">{selectedEvent.seq}</span>
+                <span className="text-[var(--muted)]">Time</span>
+                <span className="text-[var(--text)]">{formatTime(selectedEvent.receivedAt)}</span>
+              </div>
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+                <pre className="whitespace-pre-wrap break-all font-mono text-xs text-[var(--text)]">
+                  {JSON.stringify(selectedEvent.data ?? {}, null, 2)}
+                </pre>
+              </div>
+            </div>
           </FullscreenOverlay>
         </ViewTransition>
       )}

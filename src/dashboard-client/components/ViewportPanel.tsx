@@ -40,7 +40,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
         <img
           src={imgUrl}
           alt={`${source} viewport`}
-          className="h-full w-full cursor-crosshair object-contain touch-none select-none"
+          className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-manipulation"
           onMouseDown={(e) => onPointer("pressed", e)}
           onMouseUp={(e) => onPointer("released", e)}
           onMouseMove={(e) => {

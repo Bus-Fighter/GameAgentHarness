@@ -14,6 +14,8 @@ var _frame_interval := 0.2
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_frame_interval = float(ProjectSettings.get_setting("game_agent_harness/runtime_viewport_interval", 0.2))
+	ProjectSettings.set_setting("game_agent_harness/runtime_capture_enabled", true)
+	ProjectSettings.save()
 	client = ClientScript.new()
 	client.name = "GameAgentHarnessRuntimeClient"
 	add_child(client)
@@ -55,14 +57,14 @@ func _input(event: InputEvent) -> void:
 			"y": event.position.y,
 			"buttonIndex": event.button_index
 		}, _current_scene_entity())
-		_send_viewport_frame(true)
+		_send_viewport_frame(true, true)
 	elif event is InputEventScreenTouch and event.pressed:
 		client.send_event("input.pointer.pressed", {
 			"x": event.position.x,
 			"y": event.position.y,
 			"index": event.index
 		}, _current_scene_entity())
-		_send_viewport_frame(true)
+		_send_viewport_frame(true, true)
 	elif event is InputEventKey and event.pressed:
 		client.send_event("input.action.pressed", {
 			"keycode": event.keycode,
@@ -83,18 +85,25 @@ func _emit_scene_if_changed(force: bool) -> void:
 			"scenePath": path,
 			"root": _current_scene_entity()
 		}, _current_scene_entity())
-		_send_viewport_frame(true)
+		_send_viewport_frame(true, true)
 
 func _emit_state_sample() -> void:
 	var root := get_tree().root
 	var scene := get_tree().current_scene
+	var scene_path := ""
+	if scene != null and scene.scene_file_path != "":
+		scene_path = scene.scene_file_path
+	elif scene != null:
+		scene_path = str(scene.get_path())
+
 	client.send_event("state.sampled", {
-		"scene": _current_scene_entity(),
+		"scene": scene_path,
+		"sceneEntity": _current_scene_entity(),
 		"rootChildCount": root.get_child_count() if root != null else 0,
 		"currentSceneChildCount": scene.get_child_count() if scene != null else 0
 	}, _current_scene_entity())
 
-func _send_viewport_frame(persist: bool) -> void:
+func _send_viewport_frame(persist: bool, force: bool = false) -> void:
 	if client == null:
 		return
 	if not ProjectSettings.get_setting("game_agent_harness/runtime_capture_enabled", true):
@@ -102,7 +111,7 @@ func _send_viewport_frame(persist: bool) -> void:
 	var image := _capture_viewport()
 	if image == null:
 		return
-	client.send_frame(image, "runtime", persist)
+	client.send_frame(image, "runtime", persist, force)
 
 func _capture_viewport() -> Image:
 	var tree := get_tree()
@@ -133,7 +142,21 @@ func _on_harness_control(message: Dictionary) -> void:
 			float(message.get("y", 0.0)),
 			int(message.get("button", 0))
 		)
+	elif action == "runtime_capture":
+		var enabled := bool(message.get("enabled", true))
+		if not ProjectSettings.has_setting("game_agent_harness/runtime_capture_enabled"):
+			ProjectSettings.set_initial_value("game_agent_harness/runtime_capture_enabled", true)
+		ProjectSettings.set_setting("game_agent_harness/runtime_capture_enabled", enabled)
+		ProjectSettings.save()
+		_log_info("runtime capture %s from dashboard" % ("enabled" if enabled else "disabled"))
+	elif action == "runtime_viewport_interval":
+		_frame_interval = clampf(float(message.get("interval", 0.2)), 0.05, 2.0)
+		ProjectSettings.set_setting("game_agent_harness/runtime_viewport_interval", _frame_interval)
+		ProjectSettings.save()
+		_log_info("runtime viewport interval set to %.2fs from dashboard" % _frame_interval)
 
+func _log_info(message: String) -> void:
+	print("[GameAgentHarness] %s" % message)
 func _take_snapshot() -> void:
 	if client == null:
 		return
@@ -141,7 +164,7 @@ func _take_snapshot() -> void:
 	if image == null:
 		push_warning("[GameAgentHarness] snapshot failed: could not capture viewport")
 		return
-	client.send_frame(image, "runtime", true)
+	client.send_frame(image, "runtime", true, true)
 	client.send_event("snapshot.taken", {
 		"width": image.get_width(),
 		"height": image.get_height()

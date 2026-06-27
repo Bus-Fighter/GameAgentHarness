@@ -84,7 +84,10 @@ func send_event(event_type: String, data: Dictionary = {}, entity: Dictionary = 
 	}
 	send_message(message)
 
-func send_frame(image: Image, source: String = "viewport", persist: bool = false) -> void:
+var _last_frame_hash: int = 0
+var _last_frame_hash_count: int = 0
+
+func send_frame(image: Image, source: String = "viewport", persist: bool = false, force: bool = false) -> void:
 	if image == null:
 		return
 	var resized := _resize_image(image)
@@ -92,6 +95,14 @@ func send_frame(image: Image, source: String = "viewport", persist: bool = false
 	var buffer := resized.save_jpg_to_buffer(quality)
 	if buffer.size() == 0:
 		return
+
+	var hash := _hash_buffer(buffer)
+	if not force and not persist and hash == _last_frame_hash:
+		_last_frame_hash_count += 1
+		return
+	_last_frame_hash = hash
+	_last_frame_hash_count = 0
+
 	var message := {
 		"kind": "frame",
 		"format": "jpeg",
@@ -112,6 +123,15 @@ func send_frame(image: Image, source: String = "viewport", persist: bool = false
 		"engineTimeMs": int(Time.get_ticks_msec())
 	}
 	send_message(message)
+
+func _hash_buffer(buffer: PackedByteArray) -> int:
+	var h := 0
+	var step := maxi(buffer.size() / 1024, 1)
+	var i := 0
+	while i < buffer.size():
+		h = (h * 31 + buffer[i]) & 0x7FFFFFFF
+		i += step
+	return h
 
 func _resize_image(image: Image) -> Image:
 	var max_dim := max(image.get_width(), image.get_height())
