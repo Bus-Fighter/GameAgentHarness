@@ -38,8 +38,10 @@ func _process(_delta: float) -> void:
 		return
 	_runtime_running = playing
 	if playing:
+		var edited_root := get_editor_interface().get_edited_scene_root()
+		var scene_path := edited_root.scene_file_path if edited_root != null else ""
 		client.send_event("runtime.started", {
-			"scene": get_editor_interface().get_edited_scene_root()?.scene_file_path
+			"scene": scene_path
 		})
 	else:
 		client.send_event("runtime.stopped", {})
