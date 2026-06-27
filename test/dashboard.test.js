@@ -164,6 +164,8 @@ test("dashboard serves HTML and status", async (t) => {
   assert.match(index.body.toString("utf8"), /id="tab-git"/);
   assert.match(index.body.toString("utf8"), /id="file-tree"/);
   assert.match(index.body.toString("utf8"), /Code Review/);
+  assert.match(index.body.toString("utf8"), /id="connection-pill"/);
+  assert.match(index.body.toString("utf8"), /class="mobile-tab"/);
   const scriptMatch = index.body.toString("utf8").match(/\u003cscript\u003e([\s\S]*?)\u003c\/script\u003e/);
   assert.ok(scriptMatch);
   assert.doesNotThrow(() => new Function(scriptMatch[1]));

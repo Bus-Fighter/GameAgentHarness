@@ -152,6 +152,17 @@ export function buildDashboardHtml() {
       padding-bottom: calc(var(--toolbar-h) + 24px);
     }
 
+    .tab-panel {
+      display: none;
+      gap: 16px;
+    }
+
+    .tab-panel.active {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
     @media (min-width: 1024px) {
       main {
         grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -161,6 +172,16 @@ export function buildDashboardHtml() {
           "viewport events"
           "viewport evidence";
         align-items: start;
+      }
+      .tab-panel {
+        display: contents;
+      }
+      .tab-panel[data-panel="live"] {
+        display: contents;
+      }
+      .tab-panel[data-panel="files"] {
+        display: block;
+        grid-column: 1 / -1;
       }
       .viewport-panel { grid-area: viewport; position: sticky; top: calc(var(--header-h) + 16px); }
       .scene-card { grid-area: scene; }
@@ -212,8 +233,16 @@ export function buildDashboardHtml() {
     .viewport-panel .card-body {
       padding: 0;
       aspect-ratio: 16 / 10;
+      max-height: 35vh;
       background: #000;
       position: relative;
+    }
+
+    @media (min-width: 1024px) {
+      .viewport-panel .card-body {
+        max-height: none;
+        aspect-ratio: 16 / 10;
+      }
     }
 
     .viewport-img {
@@ -892,18 +921,59 @@ export function buildDashboardHtml() {
 
     .error-toast.show { opacity: 1; pointer-events: auto; }
 
-    /* Connection error banner */
-    .conn-error-banner {
-      display: none;
-      padding: 10px 16px;
-      background: var(--danger-dim);
-      color: var(--danger);
-      border-bottom: 1px solid rgba(239, 68, 68, 0.25);
-      font-size: 0.85rem;
-      text-align: center;
+    /* Mobile section tabs */
+    .mobile-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
 
-    .conn-error-banner.show { display: block; }
+    .mobile-tabs::-webkit-scrollbar { display: none; }
+
+    .mobile-tab {
+      flex: 1;
+      min-width: 64px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition), border-color var(--transition);
+      white-space: nowrap;
+    }
+
+    .mobile-tab:hover, .mobile-tab:focus-visible {
+      border-color: var(--accent);
+      color: var(--text);
+      outline: none;
+    }
+
+    .mobile-tab.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    @media (min-width: 1024px) {
+      .mobile-tabs { display: none; }
+    }
+
+    /* Connection pill */
+    #connection-pill {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    #connection-pill:hover { border-color: var(--accent); }
 
     /* Utils */
     .truncate {
@@ -938,24 +1008,25 @@ export function buildDashboardHtml() {
         <span>Game Agent Harness</span>
       </div>
       <div class="status-pills">
+        <button id="connection-pill" class="pill offline" aria-label="Reconnect">
+          <span class="dot"></span>
+          <span id="connection-pill-text">Offline</span>
+        </button>
         <span id="trace-pill" class="pill">No trace</span>
         <span id="pause-pill" class="pill" style="display:none;">Paused</span>
         <span id="engine-pill" class="pill offline"><span class="dot"></span><span id="engine-pill-text">No engine</span></span>
       </div>
-      <button id="reconnect-btn" class="reconnect-btn" style="display:none;" aria-label="Reconnect">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-          <path d="M3 3v5h5"></path>
-          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
-          <path d="M16 21h5v-5"></path>
-        </svg>
-        Reconnect
-      </button>
     </header>
 
-    <div id="conn-error" class="conn-error-banner"></div>
+    <nav class="mobile-tabs" aria-label="Dashboard sections">
+      <button class="mobile-tab active" data-tab="live" aria-selected="true">Live</button>
+      <button class="mobile-tab" data-tab="events" aria-selected="false">Events</button>
+      <button class="mobile-tab" data-tab="evidence" aria-selected="false">Evidence</button>
+      <button class="mobile-tab" data-tab="files" aria-selected="false">Files</button>
+    </nav>
 
     <main>
+      <div class="tab-panel active" data-panel="live">
       <section class="card viewport-panel">
         <div class="card-header">
           <div class="card-title">
@@ -1021,7 +1092,9 @@ export function buildDashboardHtml() {
           <div id="state-grid" class="state-grid"></div>
         </div>
       </section>
+    </div>
 
+      <div class="tab-panel" data-panel="events">
       <section class="card events-panel">
         <div class="card-header">
           <div class="card-title">
@@ -1038,7 +1111,9 @@ export function buildDashboardHtml() {
           </ul>
         </div>
       </section>
+    </div>
 
+      <div class="tab-panel" data-panel="evidence">
       <section class="card evidence-panel">
         <div class="card-header">
           <div class="card-title">
@@ -1094,6 +1169,9 @@ export function buildDashboardHtml() {
           </div>
         </div>
       </section>
+    </div>
+
+      <div class="tab-panel" data-panel="files">
       <section class="card file-review-panel">
         <div class="card-header">
           <div class="card-title">
@@ -1150,6 +1228,7 @@ export function buildDashboardHtml() {
           </div>
         </div>
       </section>
+    </div>
     </main>
 
     <nav class="floating-toolbar">
@@ -1220,8 +1299,8 @@ export function buildDashboardHtml() {
       const apiBase = "/api";
 
       const els = {
-        connError: document.getElementById("conn-error"),
-        reconnectBtn: document.getElementById("reconnect-btn"),
+        connectionPill: document.getElementById("connection-pill"),
+        connectionPillText: document.getElementById("connection-pill-text"),
         reconnectBottomBtn: document.getElementById("reconnect-bottom-btn"),
         tracePill: document.getElementById("trace-pill"),
         pausePill: document.getElementById("pause-pill"),
@@ -1284,22 +1363,20 @@ export function buildDashboardHtml() {
       function setOnline(online, mode) {
         state.connected = online;
         if (online) {
-          els.connError.classList.remove("show");
-          els.connError.textContent = "";
-          els.reconnectBtn.style.display = "none";
+          els.connectionPill.className = "pill online";
+          els.connectionPillText.textContent = mode === "fallback" ? "HTTP" : "Online";
           state.reconnectDelay = 2000;
         } else {
-          if (!state.fallback) {
-            els.reconnectBtn.style.display = "inline-flex";
-          }
+          els.connectionPill.className = "pill offline";
+          els.connectionPillText.textContent = state.fallback ? "Polling" : "Offline";
         }
         els.diagMode.textContent = mode === "fallback" ? "HTTP polling" : "WebSocket";
       }
 
       function setConnectionError(msg) {
         if (!state.connected) {
-          els.connError.textContent = msg;
-          els.connError.classList.add("show");
+          els.connectionPill.className = "pill offline";
+          els.connectionPillText.textContent = state.fallback ? "Polling" : "Retry";
         }
       }
 
@@ -1854,7 +1931,7 @@ export function buildDashboardHtml() {
       els.liveImg.addEventListener("touchend", (e) => sendPointer("released", e), { passive: false });
       els.liveImg.addEventListener("touchmove", (e) => sendPointer("moved", e), { passive: false });
 
-      els.reconnectBtn.addEventListener("click", doReconnect);
+      els.connectionPill.addEventListener("click", doReconnect);
       els.reconnectBottomBtn.addEventListener("click", doReconnect);
 
       els.recordBtn.addEventListener("click", () => {
@@ -1896,6 +1973,23 @@ export function buildDashboardHtml() {
         state.evidence = [];
         renderEvidence();
       });
+
+      (function setupMobileTabs() {
+        const tabs = document.querySelectorAll(".mobile-tab");
+        const panels = document.querySelectorAll(".tab-panel");
+        tabs.forEach((tab) => {
+          tab.addEventListener("click", () => {
+            const name = tab.dataset.tab;
+            tabs.forEach((t) => {
+              t.classList.toggle("active", t.dataset.tab === name);
+              t.setAttribute("aria-selected", String(t.dataset.tab === name));
+            });
+            panels.forEach((p) => {
+              p.classList.toggle("active", p.dataset.panel === name);
+            });
+          });
+        });
+      })();
 
       async function pollLiveFrame() {
         try {
