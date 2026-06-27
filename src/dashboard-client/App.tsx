@@ -13,7 +13,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { InspectPanel } from "./components/InspectPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSettings } from "./hooks/useSettings";
-import { fetchStatus } from "./api";
+import { fetchStatus, fetchScenes } from "./api";
 import type {
   WebSocketMessage,
   HarnessEvent,
@@ -60,6 +60,8 @@ export default function App() {
   const [resourceImportSettings, setResourceImportSettings] = useState<ResourceImportSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [signalSubscriptions, setSignalSubscriptions] = useState<SignalSubscription[]>([]);
+  const [scenes, setScenes] = useState<string[]>([]);
+  const [activeScene, setActiveScene] = useState<string | null>(null);
 
   const {
     settings,
@@ -172,10 +174,31 @@ export default function App() {
       if (event.type === "runtime.started") {
         setRuntimeRunning(true);
         setRuntimeCaptureEnabled(recordingPreference);
+        const scene = event.data?.scene ? String(event.data.scene) : null;
+        if (scene) {
+          setContext((prev) => (prev ? { ...prev, scene } : ({ scene, runtime: { running: true } } as HarnessContext)));
+          setActiveScene(scene);
+        }
       }
       if (event.type === "runtime.stopped") {
         setRuntimeRunning(false);
         setRuntimeCaptureEnabled(false);
+      }
+      if (event.type === "scene.changed") {
+        const data = event.data as Record<string, unknown> | undefined;
+        const scene = data?.scenePath ? String(data.scenePath) : data?.scene ? String(data.scene) : null;
+        if (scene) {
+          setContext((prev) => (prev ? { ...prev, scene } : ({ scene } as HarnessContext)));
+          setActiveScene(scene);
+        }
+      }
+      if (event.type === "editor.context") {
+        const data = event.data as Record<string, unknown> | undefined;
+        const scene = data?.scenePath ? String(data.scenePath) : null;
+        if (scene) {
+          setContext((prev) => (prev ? { ...prev, scene } : ({ scene } as HarnessContext)));
+          setActiveScene(scene);
+        }
       }
       if (event.type === "inspector.data") {
         const data = event.data as HarnessInspectorData | undefined;
@@ -240,6 +263,7 @@ export default function App() {
           }
           if (msg.context) {
             setContext(msg.context);
+            if (msg.context.scene) setActiveScene(msg.context.scene);
             if (msg.context.runtime?.running != null) {
               setRuntimeRunning(msg.context.runtime.running);
             }
@@ -266,6 +290,7 @@ export default function App() {
         break;
         case "context":
           setContext(msg.context);
+          if (msg.context.scene) setActiveScene(msg.context.scene);
           if (msg.context.runtime?.running != null) {
             setRuntimeRunning(msg.context.runtime.running);
           }
@@ -306,6 +331,19 @@ export default function App() {
     },
     [send],
   );
+
+  const loadScenes = useCallback(async () => {
+    try {
+      const res = await fetchScenes();
+      if (res.ok) setScenes(res.scenes);
+    } catch (err) {
+      console.error("Failed to load scenes", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadScenes();
+  }, [loadScenes]);
 
   useEffect(() => {
     sendControl("runtime_viewport_interval", { interval: settings.runtimeViewportInterval });
@@ -371,8 +409,19 @@ export default function App() {
         clientX = (e as React.MouseEvent).clientX;
         clientY = (e as React.MouseEvent).clientY;
       }
-      const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+      const naturalWidth = img.naturalWidth || rect.width;
+      const naturalHeight = img.naturalHeight || rect.height;
+      const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+      const renderedWidth = naturalWidth * scale;
+      const renderedHeight = naturalHeight * scale;
+      const offsetX = (rect.width - renderedWidth) / 2;
+      const offsetY = (rect.height - renderedHeight) / 2;
+
+      const safeWidth = renderedWidth || rect.width;
+      const safeHeight = renderedHeight || rect.height;
+      const x = Math.max(0, Math.min(1, (clientX - rect.left - offsetX) / safeWidth));
+      const y = Math.max(0, Math.min(1, (clientY - rect.top - offsetY) / safeHeight));
+
       const mouse = e as React.MouseEvent;
       sendControl("input.pointer", {
         phase,
@@ -414,6 +463,19 @@ export default function App() {
   const handleStop = useCallback(() => {
     sendControl("stop");
   }, [sendControl]);
+
+  const handleSceneChange = useCallback(
+    (scene: string) => {
+      if (!scene || scene === activeScene || scene === context?.scene) return;
+      setActiveScene(scene);
+      sendControl("scene.open", { path: scene });
+    },
+    [activeScene, context?.scene, sendControl],
+  );
+
+  const handleRefreshScenes = useCallback(() => {
+    loadScenes();
+  }, [loadScenes]);
 
   const handleLaunchEditor = useCallback(() => {
     sendControl("launch.editor");
@@ -483,7 +545,14 @@ export default function App() {
                 onSourceChange={setViewportSource}
                 onPointer={handlePointer}
               />
-              <SceneCard context={context} />
+              <SceneCard
+                context={context}
+                scenes={scenes}
+                activeScene={activeScene}
+                engineConnected={engineConnected}
+                onSceneChange={handleSceneChange}
+                onRefreshScenes={handleRefreshScenes}
+              />
               <DiagnosticsPanel status={status} mode={mode} />
             </div>
           </TabPanel>

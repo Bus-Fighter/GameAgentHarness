@@ -1,10 +1,15 @@
 import { useState, memo } from "react";
-import { Boxes } from "lucide-react";
+import { Boxes, RefreshCw } from "lucide-react";
 import { PanelHeaderActions } from "./PanelHeaderActions";
 import type { HarnessContext } from "../types";
 
 interface SceneCardProps {
   context: HarnessContext | null;
+  scenes: string[];
+  activeScene: string | null;
+  engineConnected: boolean;
+  onSceneChange: (scene: string) => void;
+  onRefreshScenes: () => void;
 }
 
 function formatScene(scene: unknown): string {
@@ -19,7 +24,14 @@ function formatScene(scene: unknown): string {
   return String(scene);
 }
 
-export const SceneCard = memo(function SceneCard({ context }: SceneCardProps) {
+export const SceneCard = memo(function SceneCard({
+  context,
+  scenes,
+  activeScene,
+  engineConnected,
+  onSceneChange,
+  onRefreshScenes,
+}: SceneCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const running = context?.runtime?.running ?? false;
   const project =
@@ -28,7 +40,8 @@ export const SceneCard = memo(function SceneCard({ context }: SceneCardProps) {
     "-";
   const engine =
     context?.observed?.engine?.name || context?.profile?.engine?.name || "-";
-  const scene = formatScene(context?.scene);
+  const currentScene = formatScene(context?.scene);
+  const selectedScene = activeScene ?? currentScene ?? "";
 
   return (
     <section className="card overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -60,9 +73,38 @@ export const SceneCard = memo(function SceneCard({ context }: SceneCardProps) {
             <span className="text-xs uppercase tracking-wide text-[var(--muted)]">Project</span>
             <span className="font-medium text-[var(--text)]">{project}</span>
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-[var(--muted)]">Scene</span>
-            <span className="font-mono text-sm font-medium text-[var(--text)]">{scene}</span>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs uppercase tracking-wide text-[var(--muted)]">Active Scene</span>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedScene}
+                onChange={(e) => onSceneChange(e.target.value)}
+                disabled={!engineConnected || scenes.length === 0}
+                className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+              >
+                <option value="" disabled>
+                  {scenes.length === 0 ? "No scenes found" : "Select a scene"}
+                </option>
+                {scenes.map((scene) => (
+                  <option key={scene} value={scene}>
+                    {scene}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={onRefreshScenes}
+                title="Refresh scene list"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+            {currentScene && currentScene !== "-" && (
+              <span className="text-xs text-[var(--muted)]">
+                Current: <span className="font-mono text-[var(--text)]">{currentScene}</span>
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs uppercase tracking-wide text-[var(--muted)]">Engine</span>

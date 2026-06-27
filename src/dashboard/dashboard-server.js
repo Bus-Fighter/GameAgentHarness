@@ -182,6 +182,11 @@ export class DashboardServer {
       return;
     }
 
+    if (pathname === "/api/scenes") {
+      json(res, { ok: true, scenes: this._listScenes() });
+      return;
+    }
+
     if (pathname === "/api/status") {
       const frame = this.frameStore?.getFrame();
       json(res, {
@@ -470,6 +475,33 @@ export class DashboardServer {
       return { error: "path outside project root" };
     }
     return { fullPath, rel };
+  }
+
+  _listScenes() {
+    const scenes = [];
+    const maxScenes = 500;
+    const walk = (dir) => {
+      if (scenes.length >= maxScenes) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (scenes.length >= maxScenes) break;
+        if (entry.name.startsWith(".")) continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".tscn")) {
+          const rel = path.relative(this.projectRoot, fullPath).replace(/\\/g, "/");
+          scenes.push(rel);
+        }
+      }
+    };
+    walk(this.projectRoot);
+    return scenes.sort();
   }
 
   async readRequestBody(req) {

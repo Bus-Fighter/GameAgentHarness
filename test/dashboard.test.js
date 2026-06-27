@@ -356,6 +356,58 @@ test("dashboard forwards snapshot, pause, play, stop, and input.pointer controls
   dashboard.close();
 });
 
+test("dashboard lists project scenes", async (t) => {
+  const SCENE_API_PORT = 18769;
+  const SCENE_DASHBOARD_PORT = 18770;
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-scenes-"));
+  fs.mkdirSync(path.join(projectRoot, "Scene"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, "Scene", "Stage.tscn"), "[gd_scene]", "utf8");
+  fs.writeFileSync(path.join(projectRoot, "Scene", "Menu.tscn"), "[gd_scene]", "utf8");
+  fs.writeFileSync(path.join(projectRoot, "README.md"), "# project", "utf8");
+
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-dashboard-scenes-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: SCENE_API_PORT,
+    traceDir: traceRoot,
+    projectRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: SCENE_DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try { fs.rmSync(traceRoot, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {}
+  });
+
+  const scenes = await fetchJson("/api/scenes", SCENE_DASHBOARD_PORT);
+  assert.equal(scenes.ok, true);
+  assert.deepEqual(scenes.scenes, ["Scene/Menu.tscn", "Scene/Stage.tscn"]);
+});
+
+test("dashboard forwards scene.open control to engine clients", async (t) => {
+  const { host } = await createHost(t);
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const engineHello = await engine.nextMessage();
+  assert.equal(engineHello.kind, "host.hello");
+
+  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
+  const dashboardHello = await dashboard.nextMessage();
+  assert.equal(dashboardHello.kind, "hello");
+
+  dashboard.send({ kind: "control", action: "scene.open", path: "Scene/Stage.tscn" });
+  const msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "scene.open");
+  assert.equal(msg.path, "Scene/Stage.tscn");
+
+  engine.close();
+  dashboard.close();
+});
+
 test("SSE endpoint streams events when WebSocket is unavailable", async (t) => {
   const { host } = await createHost(t);
 

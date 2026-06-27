@@ -17,6 +17,10 @@ export async function fetchStatus(): Promise<StatusResponse> {
   return apiGet<StatusResponse>("/status");
 }
 
+export async function fetchScenes(): Promise<{ ok: boolean; scenes: string[] }> {
+  return apiGet<{ ok: boolean; scenes: string[] }>("/scenes");
+}
+
 export async function fetchGitStatus(): Promise<GitStatus> {
   return apiGet<GitStatus>("/git/status");
 }
