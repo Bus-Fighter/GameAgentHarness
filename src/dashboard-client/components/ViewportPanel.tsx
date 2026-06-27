@@ -23,8 +23,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const onPointerRef = useRef(onPointer);
-  const panelClientId = useRef(generateClientId()).current;
-  const fullscreenClientId = useRef(generateClientId()).current;
+  const clientId = useRef(generateClientId()).current;
 
   onPointerRef.current = onPointer;
 
@@ -104,8 +103,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     </div>
   );
 
-  const panelImgUrl = captureEnabled ? getLiveFrameMjpegUrl(panelClientId) : null;
-  const fullscreenImgUrl = captureEnabled ? getLiveFrameMjpegUrl(fullscreenClientId) : null;
+  const imgUrl = captureEnabled ? getLiveFrameMjpegUrl(clientId) : null;
 
   return (
     <>
@@ -164,13 +162,13 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
           }`}
         >
           <div className="relative aspect-[16/10] max-h-[35vh] overflow-hidden bg-black lg:max-h-none">
-            {!fullscreen && renderViewportContent(panelImgUrl)}
+            {!fullscreen && renderViewportContent(imgUrl)}
           </div>
         </div>
       </section>
       {fullscreen && (
         <FullscreenOverlay title="Live Viewport" onClose={() => setFullscreen(false)}>
-          {renderViewportContent(fullscreenImgUrl)}
+          {renderViewportContent(imgUrl)}
         </FullscreenOverlay>
       )}
     </>
