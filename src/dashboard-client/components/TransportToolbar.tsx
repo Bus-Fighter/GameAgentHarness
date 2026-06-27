@@ -6,6 +6,7 @@ import {
   Square,
   RefreshCw,
   Trash2,
+  Monitor,
 } from "lucide-react";
 
 interface TransportToolbarProps {
@@ -20,6 +21,7 @@ interface TransportToolbarProps {
   onStop: () => void;
   onReconnect: () => void;
   onClearEvidence: () => void;
+  onLaunchEditor?: () => void;
 }
 
 export function TransportToolbar({
@@ -34,14 +36,21 @@ export function TransportToolbar({
   onStop,
   onReconnect,
   onClearEvidence,
+  onLaunchEditor,
 }: TransportToolbarProps) {
   const recording = captureEnabled && runtimeRunning;
+  const launchLabel = engineConnected ? "Restart Godot" : "Launch Godot";
 
   return (
     <nav
       className="fixed bottom-[calc(var(--tabs-h)+12px)] left-1/2 z-50 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[var(--border)] bg-[rgba(15,23,42,0.96)] p-1.5 shadow-lg backdrop-blur lg:bottom-3"
       style={{ viewTransitionName: "persistent-toolbar" }}
     >
+      {onLaunchEditor && (
+        <ToolbarButton onClick={onLaunchEditor} label={launchLabel}>
+          <Monitor className="h-4.5 w-4.5" />
+        </ToolbarButton>
+      )}
       <ToolbarButton
         onClick={onRecord}
         disabled={!runtimeRunning}

@@ -7,6 +7,7 @@ import { buildHandshakeResponse, decodeFrames, encodeCloseFrame, encodeTextFrame
 import { ArtifactStore } from "../core/artifact-store.js";
 import { readTrace, resolveTraceId } from "../core/trace-reader.js";
 import { buildCurrentContext } from "../core/context-builder.js";
+import { getLanIp } from "../core/network.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
@@ -39,7 +40,7 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -53,6 +54,7 @@ export class DashboardServer {
     this.engineClientCount = engineClientCount;
     this.lastEngineAt = lastEngineAt;
     this.onControlMessage = onControlMessage;
+    this.getRuntimeContext = getRuntimeContext;
   }
 
   setFrameStore(frameStore) {
@@ -159,7 +161,7 @@ export class DashboardServer {
         dashboardSseClients: this.sseClients.size,
         engineClients: this.engineClientCount?.() ?? 0,
         lastEngineAt: this.lastEngineAt?.() ?? null,
-        intakeUrl: `ws://${this.host === "0.0.0.0" ? "*" : this.host}:${this.intakePort ?? 8765}`,
+        intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
         latestFrame: frame
           ? {
               contentType: frame.contentType,
@@ -285,7 +287,7 @@ export class DashboardServer {
         this.clients.delete(socket);
       });
 
-      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null });
+      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null, context: this.getRuntimeContext?.() ?? null });
     } catch {
       socket.destroy();
     }

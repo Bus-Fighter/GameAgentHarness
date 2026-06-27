@@ -24,6 +24,7 @@ import type {
   HarnessInspectorData,
   HarnessHistoryAction,
   HarnessSceneNode,
+  HarnessNode,
   ResourcePreview,
   ResourceImportSettings,
 } from "./types";
@@ -215,6 +216,12 @@ export default function App() {
             setTraceId(msg.traceId);
             fetchStatus().then(setStatus).catch(console.error);
           }
+          if (msg.context) {
+            setContext(msg.context);
+            if (msg.context.runtime?.running != null) {
+              setRuntimeRunning(msg.context.runtime.running);
+            }
+          }
           break;
         case "trace":
           setTraceId(msg.traceId);
@@ -301,6 +308,16 @@ export default function App() {
     sendControl("scene.tree");
   }, [connected, sendControl]);
 
+  useEffect(() => {
+    if (!connected) return;
+    if (runtimeRunning) {
+      setRuntimeCaptureEnabled(recordingPreference);
+      sendControl("runtime_capture", { enabled: recordingPreference });
+    } else {
+      setRuntimeCaptureEnabled(false);
+    }
+  }, [connected, runtimeRunning, recordingPreference, sendControl]);
+
   const engineConnected = (status?.engineClients ?? 0) > 0;
 
   const handlePointer = useCallback(
@@ -361,6 +378,10 @@ export default function App() {
 
   const handleStop = useCallback(() => {
     sendControl("stop");
+  }, [sendControl]);
+
+  const handleLaunchEditor = useCallback(() => {
+    sendControl("launch.editor");
   }, [sendControl]);
 
   const handleClearLogs = useCallback(() => {
@@ -491,6 +512,7 @@ export default function App() {
         onStop={handleStop}
         onReconnect={reconnect}
         onClearEvidence={handleClearEvidence}
+        onLaunchEditor={handleLaunchEditor}
       />
       {error && (
         <div className="fixed bottom-[calc(var(--tabs-h)+var(--toolbar-h)+28px)] left-4 right-4 z-[100] rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-3 text-center text-sm text-[var(--danger)] lg:bottom-[calc(var(--toolbar-h)+24px)]">

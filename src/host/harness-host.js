@@ -4,6 +4,7 @@ import { buildSummary } from "../core/summary-builder.js";
 import { WebSocketServer } from "./websocket-server.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
+import { findGodotBin, launchEditor, killProcess } from "../core/editor-launcher.js";
 import path from "node:path";
 
 export class HarnessHost {
@@ -15,10 +16,13 @@ export class HarnessHost {
     dashboard = false,
     dashboardHost = "127.0.0.1",
     dashboardPort = 8766,
+    godotBin = null,
   } = {}) {
     this.port = Number(port);
     this.host = host;
     this.projectRoot = path.resolve(projectRoot);
+    this.godotBin = godotBin || findGodotBin();
+    this.editorProcess = null;
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
     this.server = new WebSocketServer({
@@ -38,11 +42,13 @@ export class HarnessHost {
           intakePort: this.port,
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
-          onControlMessage: (message) => this.forwardControlToEngine(message),
+          onControlMessage: (message) => this.handleDashboardControl(message),
+          getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
         })
       : null;
     this.liveFrameSeq = 0;
     this.lastEngineAt = null;
+    this.runtimeRunning = false;
   }
 
   async start() {
@@ -108,6 +114,13 @@ export class HarnessHost {
 
     const event = this.trace.append(message);
     this.dashboard?.broadcastEvent(event);
+    if (event.type === "runtime.started") {
+      this.runtimeRunning = true;
+      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
+    } else if (event.type === "runtime.stopped") {
+      this.runtimeRunning = false;
+      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
+    }
     this.server.send(socket, { kind: "host.ack", seq: event.seq, traceId: event.traceId });
   }
 
@@ -182,6 +195,32 @@ export class HarnessHost {
       try {
         this.server.send(client, payload);
       } catch {}
+    }
+  }
+
+  handleDashboardControl(message) {
+    if (message.action === "launch.editor") {
+      this.handleLaunchEditor(message);
+      return;
+    }
+    this.forwardControlToEngine(message);
+  }
+
+  handleLaunchEditor(_message) {
+    if (this.editorProcess) {
+      console.log("[harness] restarting Godot editor");
+      killProcess(this.editorProcess);
+      this.editorProcess = null;
+    } else {
+      console.log("[harness] launching Godot editor");
+    }
+
+    try {
+      this.editorProcess = launchEditor({ godotBin: this.godotBin, projectRoot: this.projectRoot });
+      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, pid: this.editorProcess.pid });
+    } catch (error) {
+      console.error(`[harness] launch editor failed: ${error.message}`);
+      this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: error.message });
     }
   }
 

@@ -3,6 +3,7 @@ import { ArtifactStore } from "./core/artifact-store.js";
 import { buildCurrentContext } from "./core/context-builder.js";
 import { getCapabilities, formatCapabilities } from "./core/capabilities.js";
 import { loadProfile, resolveTraceDir } from "./core/profile.js";
+import { getLanIp } from "./core/network.js";
 import { buildSummary } from "./core/summary-builder.js";
 import { filterTimeline, readTrace, resolveTraceId } from "./core/trace-reader.js";
 import { loadScenario, runScenario } from "./core/validation-runner.js";
@@ -41,7 +42,7 @@ function usage() {
 Usage:
   harness capabilities [--json]
   harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces] [--project-root <path>]
-  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces] [--project-root <path>]
+  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces] [--project-root <path>] [--godot-bin <path>]
   harness profile show --profile examples/test-field.profile.json [--json]
   harness context current [latest|trace-id] [--profile file] [--trace-dir traces] [--json]
   harness trace list [--trace-dir traces] [--json]
@@ -162,7 +163,8 @@ async function main() {
     });
 
     await host.start();
-    console.log(`[harness] listening on ws://${args.host ?? "127.0.0.1"}:${Number(args.port ?? 8765)}`);
+    const hostAddr = (args.host ?? "127.0.0.1") === "0.0.0.0" ? getLanIp() : (args.host ?? "127.0.0.1");
+    console.log(`[harness] listening on ws://${hostAddr}:${Number(args.port ?? 8765)}`);
     console.log(`[harness] writing traces to ${args["trace-dir"] ?? "traces"}`);
 
     const shutdown = () => {
@@ -186,11 +188,14 @@ async function main() {
       dashboard: true,
       dashboardHost,
       dashboardPort,
+      godotBin: args["godot-bin"] ?? null,
     });
 
     await host.start();
-    console.log(`[harness] intake ws://${args.host ?? "127.0.0.1"}:${Number(args.port ?? 8765)}`);
-    console.log(`[harness] dashboard http://${dashboardHost}:${dashboardPort}`);
+    const intakeHost = (args.host ?? "127.0.0.1") === "0.0.0.0" ? getLanIp() : (args.host ?? "127.0.0.1");
+    const dashboardHostDisplay = dashboardHost === "0.0.0.0" ? getLanIp() : dashboardHost;
+    console.log(`[harness] intake ws://${intakeHost}:${Number(args.port ?? 8765)}`);
+    console.log(`[harness] dashboard http://${dashboardHostDisplay}:${dashboardPort}`);
     console.log(`[harness] writing traces to ${args["trace-dir"] ?? "traces"}`);
 
     const shutdown = () => {
