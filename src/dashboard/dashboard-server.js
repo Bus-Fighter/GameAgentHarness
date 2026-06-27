@@ -131,9 +131,9 @@ export class DashboardServer {
       } catch {}
     }
     this.sseClients.clear();
-    for (const res of this.mjpegClients) {
+    for (const client of this.mjpegClients) {
       try {
-        res.end();
+        client.res.end();
       } catch {}
     }
     this.mjpegClients.clear();
@@ -443,18 +443,18 @@ export class DashboardServer {
 
   broadcastMjpegFrame(frame) {
     const boundary = "--frame";
-    const header = `\r\n${boundary}\r\nContent-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
-    const footer = "\r\n";
-    for (const res of this.mjpegClients) {
+    for (const client of this.mjpegClients) {
+      const prefix = client.headerSent ? "\r\n" : "";
+      client.headerSent = true;
+      const part = `${prefix}${boundary}\r\nContent-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
       try {
-        res.write(header);
-        res.write(frame.buffer);
-        res.write(footer);
+        client.res.write(part);
+        client.res.write(frame.buffer);
       } catch {
         try {
-          res.end();
+          client.res.end();
         } catch {}
-        this.mjpegClients.delete(res);
+        this.mjpegClients.delete(client);
       }
     }
   }
@@ -466,13 +466,14 @@ export class DashboardServer {
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
+    const client = { res, headerSent: false };
+    this.mjpegClients.add(client);
     const frame = this.frameStore?.getFrame();
     if (frame && frame.buffer) {
       this.broadcastMjpegFrame(frame);
     }
-    this.mjpegClients.add(res);
     res.on("close", () => {
-      this.mjpegClients.delete(res);
+      this.mjpegClients.delete(client);
     });
   }
 

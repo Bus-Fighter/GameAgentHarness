@@ -1,4 +1,4 @@
-import { useState, memo, startTransition, ViewTransition, useCallback, useRef } from "react";
+import { useState, memo, startTransition, useCallback, useRef } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameMjpegUrl } from "../api";
 import { FullscreenOverlay } from "./FullscreenOverlay";
@@ -169,11 +169,9 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
         </div>
       </section>
       {fullscreen && (
-        <ViewTransition enter="scale-in" exit="scale-out" default="none">
-          <FullscreenOverlay title="Live Viewport" onClose={() => setFullscreen(false)}>
-            {renderViewportContent(fullscreenImgUrl)}
-          </FullscreenOverlay>
-        </ViewTransition>
+        <FullscreenOverlay title="Live Viewport" onClose={() => setFullscreen(false)}>
+          {renderViewportContent(fullscreenImgUrl)}
+        </FullscreenOverlay>
       )}
     </>
   );
