@@ -11,6 +11,10 @@ import { getLanIp } from "../core/network.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
+const PLACEHOLDER_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8Af//Z",
+  "base64",
+);
 
 function notFound(res) {
   res.writeHead(404, { "Content-Type": "text/plain" });
@@ -441,9 +445,10 @@ export class DashboardServer {
     this.broadcastMjpegFrame(frame);
   }
 
-  broadcastMjpegFrame(frame) {
+  broadcastMjpegFrame(frame, singleClient = null) {
     const boundary = "--frame";
-    for (const client of this.mjpegClients) {
+    const targets = singleClient ? [singleClient] : this.mjpegClients;
+    for (const client of targets) {
       const prefix = client.headerSent ? "\r\n" : "";
       client.headerSent = true;
       const part = `${prefix}${boundary}\r\nContent-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
@@ -470,7 +475,23 @@ export class DashboardServer {
     this.mjpegClients.add(client);
     const frame = this.frameStore?.getFrame();
     if (frame && frame.buffer) {
-      this.broadcastMjpegFrame(frame);
+      this.broadcastMjpegFrame(frame, client);
+    } else {
+      // Send a tiny placeholder so the browser stops its loading spinner
+      // before the first real frame arrives.
+      this.broadcastMjpegFrame(
+        {
+          buffer: PLACEHOLDER_JPEG,
+          contentType: "image/jpeg",
+          source: "placeholder",
+          width: 1,
+          height: 1,
+          seq: 0,
+          traceId: null,
+          receivedAt: new Date().toISOString(),
+        },
+        client,
+      );
     }
     res.on("close", () => {
       this.mjpegClients.delete(client);
