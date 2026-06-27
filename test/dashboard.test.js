@@ -161,6 +161,9 @@ test("dashboard serves HTML and status", async (t) => {
   assert.match(index.body.toString("utf8"), /id="events-list"/);
   assert.match(index.body.toString("utf8"), /id="live-img"/);
   assert.match(index.body.toString("utf8"), /Record/);
+  assert.match(index.body.toString("utf8"), /id="tab-git"/);
+  assert.match(index.body.toString("utf8"), /id="file-tree"/);
+  assert.match(index.body.toString("utf8"), /Code Review/);
   const scriptMatch = index.body.toString("utf8").match(/\u003cscript\u003e([\s\S]*?)\u003c\/script\u003e/);
   assert.ok(scriptMatch);
   assert.doesNotThrow(() => new Function(scriptMatch[1]));
@@ -454,6 +457,72 @@ test("HTTP control endpoint forwards messages to engine clients", async (t) => {
   assert.equal(controlMsg.enabled, false);
 
   engine.close();
+});
+
+test("file API reads project files and git status", async (t) => {
+  const FILE_API_PORT = 18767;
+  const FILE_DASHBOARD_PORT = 18768;
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-files-"));
+  fs.mkdirSync(path.join(projectRoot, "Scripts"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, "Scripts", "StageSession.cs"), "class StageSession {}", "utf8");
+
+  const { spawnSync } = await import("node:child_process");
+  spawnSync("git", ["init"], { cwd: projectRoot, stdio: "ignore" });
+  spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: projectRoot, stdio: "ignore" });
+  spawnSync("git", ["config", "user.name", "Test"], { cwd: projectRoot, stdio: "ignore" });
+
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-dashboard-files-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: FILE_API_PORT,
+    traceDir: traceRoot,
+    projectRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: FILE_DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try { fs.rmSync(traceRoot, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {}
+  });
+
+  const tree = await fetchJson("/api/files/tree?path=.", FILE_DASHBOARD_PORT);
+  assert.equal(tree.ok, true);
+  assert.ok(tree.entries.some((e) => e.name === "Scripts" && e.type === "directory"));
+
+  const file = await fetchJson("/api/files?path=Scripts/StageSession.cs", FILE_DASHBOARD_PORT);
+  assert.equal(file.ok, true);
+  assert.equal(file.type, "file");
+  assert.equal(file.content, "class StageSession {}");
+
+  const status = await fetchJson("/api/git/status", FILE_DASHBOARD_PORT);
+  assert.equal(status.ok, true);
+  assert.ok(Array.isArray(status.files));
+
+  const postRes = await new Promise((resolve, reject) => {
+    const body = JSON.stringify({ path: "Scripts/StageSession.cs", content: "class StageSession { int x; }" });
+    const req = http.request(
+      {
+        hostname: TEST_HOST,
+        port: FILE_DASHBOARD_PORT,
+        path: "/api/files",
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      },
+      (r) => {
+        const chunks = [];
+        r.on("data", (c) => chunks.push(c));
+        r.on("end", () => resolve({ status: r.statusCode, body: Buffer.concat(chunks) }));
+      },
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+  assert.equal(postRes.status, 200);
+  assert.equal(fs.readFileSync(path.join(projectRoot, "Scripts", "StageSession.cs"), "utf8"), "class StageSession { int x; }");
 });
 
 test("websocket codec handles large frames", () => {

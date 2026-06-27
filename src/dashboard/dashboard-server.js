@@ -36,10 +36,11 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
+    this.projectRoot = path.resolve(projectRoot);
     this.store = new ArtifactStore(traceDir);
     this.frameStore = null;
     this.trace = null;
@@ -112,6 +113,21 @@ export class DashboardServer {
 
     if (req.method === "POST" && pathname === "/api/control") {
       this.handleControlPost(req, res);
+      return;
+    }
+
+    if (pathname.startsWith("/api/files")) {
+      this.handleFilesRequest(req, res, pathname, url);
+      return;
+    }
+
+    if (pathname.startsWith("/api/git/")) {
+      this.handleGitRequest(req, res, pathname, url);
+      return;
+    }
+
+    if (pathname === "/api/git/status") {
+      this.handleGitRequest(req, res, pathname, url);
       return;
     }
 
@@ -361,6 +377,246 @@ export class DashboardServer {
 
   broadcastEvent(event) {
     this.broadcast({ kind: "event", event });
+  }
+
+  resolveProjectPath(inputPath) {
+    if (!inputPath) return { error: "missing path" };
+    const normalized = path.normalize(inputPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const fullPath = path.resolve(this.projectRoot, normalized);
+    const rel = path.relative(this.projectRoot, fullPath);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      return { error: "path outside project root" };
+    }
+    return { fullPath, rel };
+  }
+
+  async readRequestBody(req) {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => resolve(body));
+      req.on("error", reject);
+    });
+  }
+
+  handleFilesRequest(req, res, pathname, url) {
+    if (pathname === "/api/files/tree") {
+      const relPath = url.searchParams.get("path") || ".";
+      const resolved = this.resolveProjectPath(relPath);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      if (!fs.existsSync(resolved.fullPath)) {
+        json(res, { ok: false, error: "not found" }, 404);
+        return;
+      }
+      const stat = fs.statSync(resolved.fullPath);
+      if (stat.isDirectory()) {
+        const entries = fs.readdirSync(resolved.fullPath, { withFileTypes: true })
+          .filter((d) => !d.name.startsWith("."))
+          .map((d) => ({
+            name: d.name,
+            type: d.isDirectory() ? "directory" : "file",
+            path: path.posix.join(resolved.rel.replace(/\\/g, "/"), d.name).replace(/^\.\//, ""),
+          }))
+          .sort((a, b) => {
+            if (a.type === b.type) return a.name.localeCompare(b.name);
+            return a.type === "directory" ? -1 : 1;
+          });
+        json(res, { ok: true, path: resolved.rel, entries });
+        return;
+      }
+      json(res, { ok: false, error: "not a directory" }, 400);
+      return;
+    }
+
+    if (pathname === "/api/files") {
+      const relPath = url.searchParams.get("path");
+      if (req.method === "GET") {
+        const resolved = this.resolveProjectPath(relPath || ".");
+        if (resolved.error) {
+          json(res, { ok: false, error: resolved.error }, 400);
+          return;
+        }
+        if (!fs.existsSync(resolved.fullPath)) {
+          json(res, { ok: false, error: "not found" }, 404);
+          return;
+        }
+        const stat = fs.statSync(resolved.fullPath);
+        if (stat.isDirectory()) {
+          json(res, { ok: true, path: resolved.rel, type: "directory" });
+          return;
+        }
+        const content = fs.readFileSync(resolved.fullPath, "utf8");
+        json(res, { ok: true, path: resolved.rel, type: "file", content });
+        return;
+      }
+      if (req.method === "POST") {
+        this.readRequestBody(req).then((body) => {
+          let payload;
+          try {
+            payload = JSON.parse(body);
+          } catch {
+            json(res, { ok: false, error: "invalid json" }, 400);
+            return;
+          }
+          const target = this.resolveProjectPath(payload.path || relPath);
+          if (target.error) {
+            json(res, { ok: false, error: target.error }, 400);
+            return;
+          }
+          const dir = path.dirname(target.fullPath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          fs.writeFileSync(target.fullPath, payload.content ?? "", "utf8");
+          json(res, { ok: true, path: target.rel });
+        });
+        return;
+      }
+    }
+
+    notFound(res);
+  }
+
+  execGit(args, options = {}) {
+    return new Promise((resolve, reject) => {
+      import("node:child_process").then(({ spawn }) => {
+        const child = spawn("git", args, {
+          cwd: this.projectRoot,
+          env: process.env,
+          ...options,
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (d) => { stdout += d; });
+        child.stderr.on("data", (d) => { stderr += d; });
+        child.on("close", (code) => {
+          resolve({ code, stdout, stderr });
+        });
+        child.on("error", reject);
+      }).catch(reject);
+    });
+  }
+
+  async handleGitRequest(req, res, pathname, url) {
+    if (pathname === "/api/git/status") {
+      const result = await this.execGit(["status", "--porcelain=v1", "-b"]);
+      if (result.code !== 0) {
+        json(res, { ok: false, error: result.stderr || "git status failed" }, 500);
+        return;
+      }
+      const lines = result.stdout.split("\n");
+      const branchLine = lines[0];
+      const branchMatch = branchLine.match(/^##\s+(\S+)(?:\.\.\.(\S+))?/);
+      const files = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.length < 4) continue;
+        const index = line[0];
+        const worktree = line[1];
+        const filePath = line.slice(3);
+        files.push({
+          path: filePath,
+          indexStatus: index === "?" ? "untracked" : index === " " ? "unmodified" : index,
+          worktreeStatus: worktree === "?" ? "untracked" : worktree === " " ? "unmodified" : worktree,
+        });
+      }
+      json(res, {
+        ok: true,
+        branch: branchMatch ? branchMatch[1] : null,
+        upstream: branchMatch ? branchMatch[2] : null,
+        files,
+      });
+      return;
+    }
+
+    if (pathname === "/api/git/diff") {
+      const relPath = url.searchParams.get("path");
+      const args = relPath ? ["diff", "HEAD", "--", relPath] : ["diff", "HEAD"];
+      const result = await this.execGit(args);
+      if (result.code !== 0 && result.code !== 1) {
+        json(res, { ok: false, error: result.stderr || "git diff failed" }, 500);
+        return;
+      }
+      json(res, { ok: true, path: relPath, diff: result.stdout });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/git/stage") {
+      const body = await this.readRequestBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        json(res, { ok: false, error: "invalid json" }, 400);
+        return;
+      }
+      const resolved = this.resolveProjectPath(payload.path);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      const result = await this.execGit(["add", "--", resolved.fullPath]);
+      if (result.code !== 0) {
+        json(res, { ok: false, error: result.stderr || "git add failed" }, 500);
+        return;
+      }
+      json(res, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/git/unstage") {
+      const body = await this.readRequestBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        json(res, { ok: false, error: "invalid json" }, 400);
+        return;
+      }
+      const resolved = this.resolveProjectPath(payload.path);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      const result = await this.execGit(["reset", "HEAD", "--", resolved.fullPath]);
+      if (result.code !== 0) {
+        json(res, { ok: false, error: result.stderr || "git reset failed" }, 500);
+        return;
+      }
+      json(res, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/git/reset") {
+      const body = await this.readRequestBody(req);
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch {
+        json(res, { ok: false, error: "invalid json" }, 400);
+        return;
+      }
+      const resolved = this.resolveProjectPath(payload.path);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      const result = await this.execGit(["checkout", "--", resolved.fullPath]);
+      if (result.code !== 0) {
+        json(res, { ok: false, error: result.stderr || "git checkout failed" }, 500);
+        return;
+      }
+      json(res, { ok: true });
+      return;
+    }
+
+    notFound(res);
   }
 }
 

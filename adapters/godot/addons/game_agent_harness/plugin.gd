@@ -9,6 +9,7 @@ const RuntimeAutoloadPath := "res://addons/game_agent_harness/runtime_recorder.g
 var client: GameAgentHarnessClient
 var editor_selection: EditorSelection
 var dashboard_panel: GameAgentHarnessDashboardPanel
+var _runtime_running := false
 
 func _enter_tree() -> void:
 	client = ClientScript.new()
@@ -29,6 +30,19 @@ func _enter_tree() -> void:
 
 	client.send_event("plugin.enabled", {})
 	_emit_editor_context()
+	set_process(true)
+
+func _process(_delta: float) -> void:
+	var playing := get_editor_interface().is_playing_scene()
+	if playing == _runtime_running:
+		return
+	_runtime_running = playing
+	if playing:
+		client.send_event("runtime.started", {
+			"scene": get_editor_interface().get_edited_scene_root()?.scene_file_path
+		})
+	else:
+		client.send_event("runtime.stopped", {})
 
 func _exit_tree() -> void:
 	remove_tool_menu_item("Start Game Agent Harness")

@@ -526,6 +526,237 @@ export function buildDashboardHtml() {
       max-width: 60%;
     }
 
+    /* File review */
+    .file-review-panel { grid-column: 1 / -1; }
+
+    .file-review-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .file-tab {
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition), border-color var(--transition);
+    }
+
+    .file-tab:hover, .file-tab:focus-visible {
+      border-color: var(--accent);
+      color: var(--text);
+      outline: none;
+    }
+
+    .file-tab.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .file-review-body {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--border);
+      min-height: 320px;
+      max-height: 70vh;
+    }
+
+    @media (min-width: 1024px) {
+      .file-review-body { grid-template-columns: 280px 1fr; }
+    }
+
+    .file-sidebar, .file-editor-area {
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .file-sidebar {
+      max-height: 40vh;
+    }
+
+    @media (min-width: 1024px) {
+      .file-sidebar { max-height: none; }
+    }
+
+    .file-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+
+    .file-toolbar .spacer { flex: 1; }
+
+    .file-tree {
+      flex: 1;
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .file-tree-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: "Fira Code", monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-tree-item:hover, .file-tree-item:focus-visible {
+      background: var(--surface-2);
+      outline: none;
+    }
+
+    .file-tree-item.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .file-tree-item.directory {
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .file-tree-item .indent { display: inline-block; width: 16px; }
+
+    .file-editor-area {
+      position: relative;
+    }
+
+    .file-editor-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-family: "Fira Code", monospace;
+    }
+
+    .file-editor-meta .path { color: var(--text); }
+
+    .file-editor-container {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .file-editor-container .cm-editor {
+      height: 100%;
+      min-height: 240px;
+    }
+
+    .file-diff {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+      font-family: "Fira Code", monospace;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      white-space: pre;
+    }
+
+    .file-diff .diff-line { display: flex; }
+    .file-diff .diff-line.add { background: rgba(34, 197, 94, 0.12); color: #86efac; }
+    .file-diff .diff-line.del { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+    .file-diff .diff-line.info { color: var(--muted); }
+    .file-diff .diff-marker { width: 20px; flex-shrink: 0; user-select: none; }
+    .file-diff .diff-content { white-space: pre; }
+
+    .file-empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .file-status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .file-status-badge.added { background: var(--accent-dim); color: var(--accent); }
+    .file-status-badge.modified { background: var(--warning-dim); color: var(--warning); }
+    .file-status-badge.deleted { background: var(--danger-dim); color: var(--danger); }
+    .file-status-badge.untracked { background: var(--info-dim); color: var(--info); }
+
+    .cm-scroller { font-family: "Fira Code", monospace !important; }
+
+    .toggle-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+
+    .toggle-inline input {
+      appearance: none;
+      width: 36px;
+      height: 20px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      position: relative;
+      outline: none;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .toggle-inline input::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: var(--text);
+      border-radius: 50%;
+      transition: transform var(--transition);
+    }
+
+    .toggle-inline input:checked {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+    }
+
+    .toggle-inline input:checked::after {
+      transform: translateX(16px);
+      background: var(--accent);
+    }
+
     /* Floating transport toolbar */
     .floating-toolbar {
       position: fixed;
@@ -863,6 +1094,62 @@ export function buildDashboardHtml() {
           </div>
         </div>
       </section>
+      <section class="card file-review-panel">
+        <div class="card-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Code Review
+            <span id="file-review-badge" class="pill">0</span>
+          </div>
+        </div>
+        <div class="file-review-tabs">
+          <button id="tab-git" class="file-tab active" data-tab="git">Git Changes</button>
+          <button id="tab-project" class="file-tab" data-tab="project">Project Files</button>
+        </div>
+        <div class="file-review-body">
+          <div class="file-sidebar">
+            <div class="file-toolbar">
+              <span id="file-list-title">Changed files</span>
+              <span class="spacer"></span>
+              <button id="file-refresh-btn" class="reconnect-btn" aria-label="Refresh files">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                  <path d="M3 3v5h5"></path>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                  <path d="M16 21h5v-5"></path>
+                </svg>
+              </button>
+            </div>
+            <div id="file-tree" class="file-tree">
+              <div class="file-empty-state">No files loaded.</div>
+            </div>
+          </div>
+          <div class="file-editor-area">
+            <div class="file-editor-meta">
+              <span id="file-editor-path" class="path">-</span>
+              <span class="spacer"></span>
+              <label class="toggle-inline">
+                <input id="file-edit-toggle" type="checkbox">
+                <span>Edit</span>
+              </label>
+              <label class="toggle-inline">
+                <input id="file-autosave-toggle" type="checkbox">
+                <span>Auto-save</span>
+              </label>
+              <button id="file-save-btn" class="reconnect-btn" disabled>Save</button>
+            </div>
+            <div id="file-editor-container" class="file-editor-container">
+              <div class="file-empty-state">Select a file to review.</div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <nav class="floating-toolbar">
@@ -982,6 +1269,7 @@ export function buildDashboardHtml() {
         lastSeq: 0,
         latestStateSample: null,
         runtimeCaptureEnabled: true,
+        recordingPreference: true,
         paused: false,
         engineConnected: false,
         runtimeRunning: false,
@@ -1285,10 +1573,27 @@ export function buildDashboardHtml() {
         els.playBtn.disabled = !engine || running;
         els.stopBtn.disabled = !engine || !running;
         els.pauseBtn.disabled = !running;
+        els.recordBtn.disabled = !running;
         els.playBtn.classList.toggle("active", running);
-        els.recordBtn.classList.toggle("active", state.runtimeCaptureEnabled);
-        els.recordBtn.setAttribute("aria-pressed", String(state.runtimeCaptureEnabled));
-        els.recordBtn.querySelector(".toolbar-label").textContent = state.runtimeCaptureEnabled ? "Recording" : "Record";
+        els.recordBtn.classList.toggle("active", state.runtimeCaptureEnabled && running);
+        els.recordBtn.setAttribute("aria-pressed", String(state.runtimeCaptureEnabled && running));
+        els.recordBtn.querySelector(".toolbar-label").textContent = (state.runtimeCaptureEnabled && running) ? "Recording" : "Record";
+      }
+
+      function setRecordingEnabled(enabled, sendControlMessage) {
+        state.recordingPreference = enabled;
+        const effective = enabled && state.runtimeRunning;
+        if (state.runtimeCaptureEnabled === effective) return;
+        state.runtimeCaptureEnabled = effective;
+        updateViewportVisibility();
+        updateTransportUI();
+        if (sendControlMessage) {
+          sendControl({
+            kind: "control",
+            action: "runtime_capture",
+            enabled: effective,
+          });
+        }
       }
 
       function handleFrame(frame) {
@@ -1319,9 +1624,8 @@ export function buildDashboardHtml() {
           renderStateGrid();
         }
         if (event.type === "runtime_capture.changed") {
-          state.runtimeCaptureEnabled = Boolean(event.data?.enabled);
-          updateViewportVisibility();
-          updateTransportUI();
+          state.recordingPreference = Boolean(event.data?.enabled);
+          setRecordingEnabled(state.recordingPreference, false);
         }
         if (event.type === "pause.changed") {
           state.paused = Boolean(event.data?.enabled);
@@ -1329,10 +1633,12 @@ export function buildDashboardHtml() {
         }
         if (event.type === "runtime.started") {
           state.runtimeRunning = true;
+          setRecordingEnabled(state.recordingPreference, true);
           updateTransportUI();
         }
         if (event.type === "runtime.stopped") {
           state.runtimeRunning = false;
+          setRecordingEnabled(false, true);
           updateTransportUI();
         }
         addEvent(event);
@@ -1552,15 +1858,8 @@ export function buildDashboardHtml() {
       els.reconnectBottomBtn.addEventListener("click", doReconnect);
 
       els.recordBtn.addEventListener("click", () => {
-        const next = !state.runtimeCaptureEnabled;
-        state.runtimeCaptureEnabled = next;
-        updateViewportVisibility();
-        updateTransportUI();
-        sendControl({
-          kind: "control",
-          action: "runtime_capture",
-          enabled: next,
-        });
+        if (!state.runtimeRunning) return;
+        setRecordingEnabled(!state.recordingPreference, true);
       });
 
       els.playBtn.addEventListener("click", () => {
@@ -1619,11 +1918,290 @@ export function buildDashboardHtml() {
 
       updatePauseUI();
       updateViewportVisibility();
+      setRecordingEnabled(state.recordingPreference, false);
       updateTransportUI();
       connect();
       setInterval(fetchStatus, 2000);
       setInterval(pollLiveFrame, 2000);
     })();
+  </script>
+
+  <script type="module">
+    import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
+    import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+    import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6.2.1";
+    import { json } from "https://esm.sh/@codemirror/lang-json@6.0.1";
+    import { html } from "https://esm.sh/@codemirror/lang-html@6.4.8";
+    import { css } from "https://esm.sh/@codemirror/lang-css@6.2.1";
+    import { markdown } from "https://esm.sh/@codemirror/lang-markdown@6.2.4";
+    import { StreamLanguage } from "https://esm.sh/@codemirror/language@6.10.1";
+    import { csharp } from "https://esm.sh/@codemirror/legacy-modes/mode/clike@6.3.3";
+    import { python } from "https://esm.sh/@codemirror/legacy-modes/mode/python@6.4.0";
+
+    const apiBase = "/api";
+
+    const els = {
+      tabGit: document.getElementById("tab-git"),
+      tabProject: document.getElementById("tab-project"),
+      fileListTitle: document.getElementById("file-list-title"),
+      fileTree: document.getElementById("file-tree"),
+      fileRefreshBtn: document.getElementById("file-refresh-btn"),
+      fileEditorPath: document.getElementById("file-editor-path"),
+      fileEditToggle: document.getElementById("file-edit-toggle"),
+      fileAutosaveToggle: document.getElementById("file-autosave-toggle"),
+      fileSaveBtn: document.getElementById("file-save-btn"),
+      fileEditorContainer: document.getElementById("file-editor-container"),
+      fileReviewBadge: document.getElementById("file-review-badge"),
+    };
+
+    const state = {
+      tab: "git",
+      gitFiles: [],
+      projectTree: [],
+      selectedPath: null,
+      currentContent: "",
+      editor: null,
+      autoSave: false,
+    };
+
+    function fileExtension(p) {
+      const i = p.lastIndexOf(".");
+      return i > 0 ? p.slice(i + 1).toLowerCase() : "";
+    }
+
+    function languageSupport(ext) {
+      if (["js", "mjs", "cjs"].includes(ext)) return javascript();
+      if (ext === "ts") return javascript({ typescript: true });
+      if (ext === "json") return json();
+      if (["html", "htm"].includes(ext)) return html();
+      if (ext === "css") return css();
+      if (ext === "md") return markdown();
+      if (ext === "cs") return StreamLanguage.define(csharp);
+      if (["gd", "py"].includes(ext)) return StreamLanguage.define(python);
+      return [];
+    }
+
+    function isTextFile(path) {
+      const binary = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "mp3", "wav", "ogg", "mp4", "webm", "zip", "tar", "gz", "rar", "7z", "exe", "dll", "so", "dylib", "bin", "obj", "pdb", "mdb"];
+      return !binary.includes(fileExtension(path));
+    }
+
+    async function apiGet(path) {
+      const res = await fetch(apiBase + path);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }
+
+    async function apiPost(path, body) {
+      const res = await fetch(apiBase + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }
+
+    function setTab(tab) {
+      state.tab = tab;
+      els.tabGit.classList.toggle("active", tab === "git");
+      els.tabProject.classList.toggle("active", tab === "project");
+      els.fileListTitle.textContent = tab === "git" ? "Changed files" : "Project files";
+      if (tab === "git") renderGitFiles();
+      else renderProjectTree();
+    }
+
+    function statusClass(status) {
+      if (status === "A" || status === "added") return "added";
+      if (status === "M" || status === "modified") return "modified";
+      if (status === "D" || status === "deleted") return "deleted";
+      if (status === "?" || status === "untracked") return "untracked";
+      return "";
+    }
+
+    function statusLabel(status) {
+      if (status === "A" || status === "added") return "A";
+      if (status === "M" || status === "modified") return "M";
+      if (status === "D" || status === "deleted") return "D";
+      if (status === "?" || status === "untracked") return "U";
+      return status;
+    }
+
+    function renderGitFiles() {
+      if (state.gitFiles.length === 0) {
+        els.fileTree.innerHTML = '<div class="file-empty-state">No changes.</div>';
+        return;
+      }
+      els.fileTree.innerHTML = state.gitFiles.map((f) => {
+        const cls = statusClass(f.worktreeStatus || f.indexStatus);
+        const active = state.selectedPath === f.path ? "active" : "";
+        return '<div class="file-tree-item ' + active + '" data-path="' + f.path + '" tabindex="0" role="button">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>' +
+          '<span style="overflow:hidden;text-overflow:ellipsis">' + f.path + '</span>' +
+          (cls ? '<span class="file-status-badge ' + cls + '" title="' + (f.worktreeStatus || f.indexStatus) + '">' + statusLabel(f.worktreeStatus || f.indexStatus) + '</span>' : '') +
+          '</div>';
+      }).join("");
+      els.fileTree.querySelectorAll(".file-tree-item").forEach((item) => {
+        item.addEventListener("click", () => openFile(item.dataset.path, true));
+      });
+    }
+
+    function renderProjectTree() {
+      if (state.projectTree.length === 0) {
+        els.fileTree.innerHTML = '<div class="file-empty-state">No files loaded.</div>';
+        return;
+      }
+      els.fileTree.innerHTML = renderTreeItems(state.projectTree, "");
+      els.fileTree.querySelectorAll(".file-tree-item").forEach((item) => {
+        item.addEventListener("click", () => {
+          if (item.dataset.type === "directory") {
+            loadDirectory(item.dataset.path);
+          } else {
+            openFile(item.dataset.path, false);
+          }
+        });
+      });
+    }
+
+    function renderTreeItems(entries, prefix) {
+      return entries.map((e) => {
+        const active = state.selectedPath === e.path ? "active" : "";
+        const icon = e.type === "directory"
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+        return '<div class="file-tree-item ' + e.type + " " + active + '" data-path="' + e.path + '" data-type="' + e.type + '" tabindex="0" role="button">' +
+          prefix + icon + '<span style="overflow:hidden;text-overflow:ellipsis">' + e.name + '</span>' +
+          '</div>';
+      }).join("");
+    }
+
+    async function loadGitStatus() {
+      try {
+        const data = await apiGet("/git/status");
+        state.gitFiles = data.files || [];
+        els.fileReviewBadge.textContent = String(state.gitFiles.length);
+        els.fileReviewBadge.className = "pill " + (state.gitFiles.length > 0 ? "warn" : "");
+        if (state.tab === "git") renderGitFiles();
+      } catch (e) {
+        els.fileTree.innerHTML = '<div class="file-empty-state">Git status failed: ' + e.message + '</div>';
+      }
+    }
+
+    async function loadDirectory(dirPath) {
+      try {
+        const data = await apiGet("/files/tree?path=" + encodeURIComponent(dirPath));
+        state.projectTree = data.entries || [];
+        if (state.tab === "project") renderProjectTree();
+      } catch (e) {
+        els.fileTree.innerHTML = '<div class="file-empty-state">Could not load files: ' + e.message + '</div>';
+      }
+    }
+
+    async function openFile(filePath, showDiff) {
+      state.selectedPath = filePath;
+      els.fileEditorPath.textContent = filePath;
+      if (state.tab === "git") renderGitFiles();
+      else renderProjectTree();
+
+      if (!isTextFile(filePath)) {
+        els.fileEditorContainer.innerHTML = '<div class="file-empty-state">Binary file — cannot preview.</div>';
+        return;
+      }
+
+      try {
+        const [fileData, diffData] = await Promise.all([
+          apiGet("/files?path=" + encodeURIComponent(filePath)),
+          showDiff ? apiGet("/git/diff?path=" + encodeURIComponent(filePath)) : Promise.resolve({ diff: "" }),
+        ]);
+        state.currentContent = fileData.content ?? "";
+        if (showDiff && diffData.diff) {
+          renderDiff(diffData.diff);
+        } else {
+          renderEditor();
+        }
+      } catch (e) {
+        els.fileEditorContainer.innerHTML = '<div class="file-empty-state">Could not load file: ' + e.message + '</div>';
+      }
+    }
+
+    function renderDiff(diff) {
+      const html = diff.split("\n").map((line) => {
+        let cls = "";
+        let marker = " ";
+        if (line.startsWith("+")) { cls = "add"; marker = "+"; }
+        else if (line.startsWith("-")) { cls = "del"; marker = "-"; }
+        else if (line.startsWith("@")) { cls = "info"; marker = "@"; }
+        return '<div class="diff-line ' + cls + '" data-marker="' + marker + '"><span class="diff-marker">' + marker + '</span><span class="diff-content">' + escapeHtml(line) + '</span></div>';
+      }).join("");
+      els.fileEditorContainer.innerHTML = '<pre class="file-diff">' + html + '</pre>';
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function renderEditor() {
+      els.fileEditorContainer.innerHTML = "";
+      const ext = fileExtension(state.selectedPath);
+      const editable = els.fileEditToggle.checked;
+      state.editor = new EditorView({
+        doc: state.currentContent,
+        extensions: [basicSetup, oneDark, languageSupport(ext), EditorView.editable.of(editable)],
+        parent: els.fileEditorContainer,
+        dispatch: (tr) => {
+          state.editor.update([tr]);
+          if (state.autoSave && tr.docChanged) {
+            debouncedSave();
+          }
+        },
+      });
+      updateSaveState();
+    }
+
+    let saveTimer = null;
+    function debouncedSave() {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveCurrentFile, 800);
+    }
+
+    async function saveCurrentFile() {
+      if (!state.selectedPath || !state.editor) return;
+      const content = state.editor.state.doc.toString();
+      try {
+        await apiPost("/files", { path: state.selectedPath, content });
+        state.currentContent = content;
+        els.fileSaveBtn.textContent = "Saved";
+        setTimeout(() => { els.fileSaveBtn.textContent = "Save"; }, 1500);
+        if (state.tab === "git") loadGitStatus();
+      } catch (e) {
+        alert("Save failed: " + e.message);
+      }
+    }
+
+    function updateSaveState() {
+      els.fileSaveBtn.disabled = !els.fileEditToggle.checked;
+    }
+
+    els.tabGit.addEventListener("click", () => setTab("git"));
+    els.tabProject.addEventListener("click", () => setTab("project"));
+    els.fileRefreshBtn.addEventListener("click", () => {
+      if (state.tab === "git") loadGitStatus();
+      else loadDirectory(".");
+    });
+    els.fileEditToggle.addEventListener("change", () => {
+      updateSaveState();
+      if (state.editor) renderEditor();
+    });
+    els.fileAutosaveToggle.addEventListener("change", () => {
+      state.autoSave = els.fileAutosaveToggle.checked;
+    });
+    els.fileSaveBtn.addEventListener("click", saveCurrentFile);
+
+    loadGitStatus();
+    loadDirectory(".");
+    setInterval(() => {
+      if (state.tab === "git") loadGitStatus();
+    }, 5000);
   </script>
 </body>
 </html>`;

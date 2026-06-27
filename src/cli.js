@@ -40,8 +40,8 @@ function usage() {
 
 Usage:
   harness capabilities [--json]
-  harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces]
-  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces]
+  harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces] [--project-root <path>]
+  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces] [--project-root <path>]
   harness profile show --profile examples/test-field.profile.json [--json]
   harness context current [latest|trace-id] [--profile file] [--trace-dir traces] [--json]
   harness trace list [--trace-dir traces] [--json]
@@ -158,6 +158,7 @@ async function main() {
       host: args.host ?? "127.0.0.1",
       port: Number(args.port ?? 8765),
       traceDir: args["trace-dir"] ?? "traces",
+      projectRoot: args["project-root"] ?? process.cwd(),
     });
 
     await host.start();
@@ -181,6 +182,7 @@ async function main() {
       host: args.host ?? "127.0.0.1",
       port: Number(args.port ?? 8765),
       traceDir: args["trace-dir"] ?? "traces",
+      projectRoot: args["project-root"] ?? process.cwd(),
       dashboard: true,
       dashboardHost,
       dashboardPort,

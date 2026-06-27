@@ -11,12 +11,14 @@ export class HarnessHost {
     port = 8765,
     host = "127.0.0.1",
     traceDir = "traces",
+    projectRoot = process.cwd(),
     dashboard = false,
     dashboardHost = "127.0.0.1",
     dashboardPort = 8766,
   } = {}) {
     this.port = Number(port);
     this.host = host;
+    this.projectRoot = path.resolve(projectRoot);
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
     this.server = new WebSocketServer({
@@ -32,6 +34,7 @@ export class HarnessHost {
           host: dashboardHost,
           port: Number(dashboardPort),
           traceDir,
+          projectRoot: this.projectRoot,
           intakePort: this.port,
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
