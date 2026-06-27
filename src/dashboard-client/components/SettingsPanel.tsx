@@ -13,6 +13,7 @@ interface SettingsPanelProps {
   onEditorViewportEnabledChange: (value: boolean) => void;
   onEditorViewportIntervalChange: (value: number) => void;
   onRuntimeViewportIntervalChange: (value: number) => void;
+  onEvidenceFrameIntervalChange: (value: number) => void;
   onInspectorEnabledChange: (value: boolean) => void;
   onSignalsEnabledChange: (value: boolean) => void;
   onHistoryEnabledChange: (value: boolean) => void;
@@ -31,6 +32,7 @@ export function SettingsPanel({
   onEditorViewportEnabledChange,
   onEditorViewportIntervalChange,
   onRuntimeViewportIntervalChange,
+  onEvidenceFrameIntervalChange,
   onInspectorEnabledChange,
   onSignalsEnabledChange,
   onHistoryEnabledChange,
@@ -190,6 +192,29 @@ export function SettingsPanel({
                   <button
                     type="button"
                     onClick={() => onRuntimeViewportIntervalChange(settings.runtimeViewportInterval + 0.05)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <Timer className="h-3.5 w-3.5" />
+                  Evidence interval (s)
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onEvidenceFrameIntervalChange(settings.evidenceFrameInterval - 0.5)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[4ch] text-center text-sm font-semibold text-[var(--text)]">{settings.evidenceFrameInterval.toFixed(1)}s</span>
+                  <button
+                    type="button"
+                    onClick={() => onEvidenceFrameIntervalChange(settings.evidenceFrameInterval + 0.5)}
                     className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
                   >
                     <Plus className="h-4 w-4" />

@@ -51,6 +51,59 @@ export function flushAllWriters() {
   }
 }
 
+export function trimJsonLines(filePath, keepLast) {
+  const writer = WRITERS.get(filePath);
+  if (writer && writer.buffer.length > 0) {
+    flushWriter(filePath, writer);
+  }
+  if (!fs.existsSync(filePath)) {
+    return 0;
+  }
+  const content = fs.readFileSync(filePath, "utf8").trim();
+  if (!content) {
+    return 0;
+  }
+  const lines = content.split("\n").filter(Boolean);
+  if (lines.length <= keepLast) {
+    return lines.length;
+  }
+  const kept = lines.slice(-keepLast);
+  fs.writeFileSync(filePath, kept.join("\n") + "\n", "utf8");
+  return kept.length;
+}
+
+export function removeLinesBySeq(filePath, seqsToRemove) {
+  const writer = WRITERS.get(filePath);
+  if (writer && writer.buffer.length > 0) {
+    flushWriter(filePath, writer);
+  }
+  const toRemove = new Set(seqsToRemove);
+  if (!fs.existsSync(filePath) || toRemove.size === 0) {
+    return 0;
+  }
+  const content = fs.readFileSync(filePath, "utf8").trim();
+  if (!content) {
+    return 0;
+  }
+  const lines = content.split("\n").filter(Boolean);
+  const kept = [];
+  let removed = 0;
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed != null && toRemove.has(parsed.seq)) {
+        removed += 1;
+        continue;
+      }
+    } catch {
+      // Keep malformed lines rather than losing data.
+    }
+    kept.push(line);
+  }
+  fs.writeFileSync(filePath, kept.length > 0 ? kept.join("\n") + "\n" : "", "utf8");
+  return removed;
+}
+
 export function readJsonLines(filePath) {
   const gzPath = `${filePath}.gz`;
   if (fs.existsSync(gzPath)) {

@@ -72,6 +72,7 @@ export default function App() {
     setEditorViewportEnabled,
     setEditorViewportInterval,
     setRuntimeViewportInterval,
+    setEvidenceFrameInterval,
     setInspectorEnabled,
     setSignalsEnabled,
     setHistoryEnabled,
@@ -286,6 +287,9 @@ export default function App() {
           latestEditorFrameRef.current = msg;
         } else {
           latestRuntimeFrameRef.current = msg;
+          if (!runtimeRunning) {
+            setRuntimeRunning(true);
+          }
         }
         scheduleFrameFlush();
         break;
@@ -321,7 +325,7 @@ export default function App() {
           break;
       }
     },
-    [handleEvent],
+    [handleEvent, runtimeRunning],
   );
 
   const { connected, mode, error, reconnect, send } = useWebSocket(handleMessage);
@@ -354,6 +358,10 @@ export default function App() {
   useEffect(() => {
     sendControl("runtime_viewport_interval", { interval: settings.runtimeViewportInterval });
   }, [settings.runtimeViewportInterval, sendControl]);
+
+  useEffect(() => {
+    sendControl("evidence_frame_interval", { interval: settings.evidenceFrameInterval });
+  }, [settings.evidenceFrameInterval, sendControl]);
 
   useEffect(() => {
     sendControl("editor_viewport", { enabled: settings.editorViewportEnabled, interval: settings.editorViewportInterval });
@@ -641,6 +649,7 @@ export default function App() {
         onEditorViewportEnabledChange={setEditorViewportEnabled}
         onEditorViewportIntervalChange={setEditorViewportInterval}
         onRuntimeViewportIntervalChange={setRuntimeViewportInterval}
+        onEvidenceFrameIntervalChange={setEvidenceFrameInterval}
         onInspectorEnabledChange={setInspectorEnabled}
         onSignalsEnabledChange={setSignalsEnabled}
         onHistoryEnabledChange={setHistoryEnabled}

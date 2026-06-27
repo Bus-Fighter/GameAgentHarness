@@ -76,3 +76,7 @@ export async function gitReset(path: string): Promise<void> {
 export function getLiveFrameUrl(seq?: number): string {
   return API_BASE + "/live/frame" + (seq != null ? `?seq=${seq}` : "");
 }
+
+export function getLiveFrameMjpegUrl(): string {
+  return API_BASE + "/live/frame.mjpeg";
+}

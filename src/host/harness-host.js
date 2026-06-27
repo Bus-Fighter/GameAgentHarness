@@ -34,7 +34,7 @@ export class HarnessHost {
       host: this.host,
       onConnection: (socket) => this.onConnection(socket),
       onMessage: (socket, message) => this.onMessage(socket, message),
-      onClose: () => this.dashboard?.broadcastStatus(),
+      onClose: (socket) => this.onEngineDisconnect(socket),
     });
     this.frameStore = new FrameStore();
     this.dashboard = dashboard
@@ -133,6 +133,15 @@ export class HarnessHost {
     this.server.send(socket, { kind: "host.ack", seq: event.seq, traceId: event.traceId });
   }
 
+  onEngineDisconnect(socket) {
+    this.lastEngineAt = new Date().toISOString();
+    if (this.server.clients.size === 0 && this.runtimeRunning) {
+      this.runtimeRunning = false;
+      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
+    }
+    this.dashboard?.broadcastStatus();
+  }
+
   handleFrame(socket, message) {
     if (!message.data || typeof message.data !== "string") {
       this.server.send(socket, { kind: "host.error", error: "Frame missing base64 data" });
@@ -147,7 +156,9 @@ export class HarnessHost {
       return;
     }
 
-    console.log(`[harness] received frame ${message.width ?? "?"}x${message.height ?? "?"} ${buffer.length} bytes from ${message.source ?? "unknown"}`);
+    if (process.env.HARNESS_DEBUG) {
+      console.log(`[harness] received frame ${message.width ?? "?"}x${message.height ?? "?"} ${buffer.length} bytes from ${message.source ?? "unknown"}`);
+    }
 
     const format = message.format === "jpeg" || message.format === "jpg" ? "jpg" : "png";
     const contentType = format === "jpg" ? "image/jpeg" : "image/png";
@@ -158,7 +169,6 @@ export class HarnessHost {
       seq = this.trace.nextSeq();
       fileName = `frame-${seq}.${format}`;
       const evidencePath = this.store.writeBinary(this.trace.traceId, path.join("evidence", fileName), buffer);
-      this.trace.registerEvidenceFile(evidencePath);
       const event = this.trace.append({
         kind: "event",
         type: "evidence.frame",
@@ -174,6 +184,7 @@ export class HarnessHost {
           source: message.source ?? "unknown",
         },
       });
+      this.trace.registerEvidenceFile(evidencePath, event.seq);
       this.dashboard?.broadcastEvent(event);
     } else if (this.trace) {
       seq = ++this.liveFrameSeq;
@@ -191,6 +202,10 @@ export class HarnessHost {
     };
     this.frameStore.setFrame(frame);
     this.dashboard?.broadcastFrame(frame);
+    if (frame.source === "runtime" && !this.runtimeRunning) {
+      this.runtimeRunning = true;
+      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
+    }
 
     this.server.send(socket, {
       kind: "host.ack",

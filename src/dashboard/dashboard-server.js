@@ -52,6 +52,7 @@ export class DashboardServer {
     this.server = null;
     this.clients = new Set();
     this.sseClients = new Set();
+    this.mjpegClients = new Set();
     this.engineClientCount = engineClientCount;
     this.lastEngineAt = lastEngineAt;
     this.onControlMessage = onControlMessage;
@@ -130,6 +131,12 @@ export class DashboardServer {
       } catch {}
     }
     this.sseClients.clear();
+    for (const res of this.mjpegClients) {
+      try {
+        res.end();
+      } catch {}
+    }
+    this.mjpegClients.clear();
     this.server?.close();
   }
 
@@ -262,6 +269,11 @@ export class DashboardServer {
         json(res, { traceId, context });
         return;
       }
+    }
+
+    if (pathname === "/api/live/frame.mjpeg") {
+      this.handleMjpeg(req, res);
+      return;
     }
 
     if (pathname === "/api/live/frame") {
@@ -426,6 +438,42 @@ export class DashboardServer {
     };
     this.broadcast(payload);
     this.broadcastStatus();
+    this.broadcastMjpegFrame(frame);
+  }
+
+  broadcastMjpegFrame(frame) {
+    const boundary = "--frame";
+    const header = `\r\n${boundary}\r\nContent-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
+    const footer = "\r\n";
+    for (const res of this.mjpegClients) {
+      try {
+        res.write(header);
+        res.write(frame.buffer);
+        res.write(footer);
+      } catch {
+        try {
+          res.end();
+        } catch {}
+        this.mjpegClients.delete(res);
+      }
+    }
+  }
+
+  handleMjpeg(_req, res) {
+    res.writeHead(200, {
+      "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    });
+    const frame = this.frameStore?.getFrame();
+    if (frame && frame.buffer) {
+      this.broadcastMjpegFrame(frame);
+    }
+    this.mjpegClients.add(res);
+    res.on("close", () => {
+      this.mjpegClients.delete(res);
+    });
   }
 
   broadcastEvent(event) {

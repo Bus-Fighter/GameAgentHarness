@@ -10,6 +10,7 @@ export interface DashboardSettings {
   editorViewportEnabled: boolean;
   editorViewportInterval: number;
   runtimeViewportInterval: number;
+  evidenceFrameInterval: number;
   inspectorEnabled: boolean;
   signalsEnabled: boolean;
   historyEnabled: boolean;
@@ -24,7 +25,8 @@ const DEFAULTS: DashboardSettings = {
   maxLogLines: 500,
   editorViewportEnabled: false,
   editorViewportInterval: 0.2,
-  runtimeViewportInterval: 0.2,
+  runtimeViewportInterval: 0.5,
+  evidenceFrameInterval: 5.0,
   inspectorEnabled: true,
   signalsEnabled: true,
   historyEnabled: true,
@@ -47,6 +49,7 @@ function loadSettings(): DashboardSettings {
         : DEFAULTS.logLevel,
       editorViewportInterval: Math.max(0.05, Math.min(2.0, Number(parsed.editorViewportInterval) || DEFAULTS.editorViewportInterval)),
       runtimeViewportInterval: Math.max(0.05, Math.min(2.0, Number(parsed.runtimeViewportInterval) || DEFAULTS.runtimeViewportInterval)),
+      evidenceFrameInterval: Math.max(0.5, Math.min(60.0, Number(parsed.evidenceFrameInterval) || DEFAULTS.evidenceFrameInterval)),
       inspectorEnabled: typeof parsed.inspectorEnabled === "boolean" ? parsed.inspectorEnabled : DEFAULTS.inspectorEnabled,
       signalsEnabled: typeof parsed.signalsEnabled === "boolean" ? parsed.signalsEnabled : DEFAULTS.signalsEnabled,
       historyEnabled: typeof parsed.historyEnabled === "boolean" ? parsed.historyEnabled : DEFAULTS.historyEnabled,
@@ -75,6 +78,7 @@ export function useSettings(): {
   setEditorViewportEnabled: (value: boolean) => void;
   setEditorViewportInterval: (value: number) => void;
   setRuntimeViewportInterval: (value: number) => void;
+  setEvidenceFrameInterval: (value: number) => void;
   setInspectorEnabled: (value: boolean) => void;
   setSignalsEnabled: (value: boolean) => void;
   setHistoryEnabled: (value: boolean) => void;
@@ -119,6 +123,11 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, runtimeViewportInterval: clamped }));
   }, []);
 
+  const setEvidenceFrameInterval = useCallback((value: number) => {
+    const clamped = Math.max(0.5, Math.min(60.0, value));
+    setSettings((prev) => ({ ...prev, evidenceFrameInterval: clamped }));
+  }, []);
+
   const setInspectorEnabled = useCallback((value: boolean) => {
     setSettings((prev) => ({ ...prev, inspectorEnabled: value }));
   }, []);
@@ -140,5 +149,5 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, pointerInjectMode: value }));
   }, []);
 
-  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
+  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
 }

@@ -1,6 +1,6 @@
 import { useState, memo, startTransition, ViewTransition, useCallback, useRef } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
-import { getLiveFrameUrl } from "../api";
+import { getLiveFrameMjpegUrl } from "../api";
 import { FullscreenOverlay } from "./FullscreenOverlay";
 import type { FrameMessage } from "../types";
 
@@ -16,7 +16,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const onPointerRef = useRef(onPointer);
-  const imgUrl = frame && captureEnabled ? getLiveFrameUrl(frame.seq) : null;
+  const imgUrl = captureEnabled ? getLiveFrameMjpegUrl() : null;
 
   onPointerRef.current = onPointer;
 

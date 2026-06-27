@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { appendJsonLine, flushWriter } from "./jsonl.js";
+import { appendJsonLine, flushWriter, trimJsonLines, removeLinesBySeq } from "./jsonl.js";
 import { makeTraceId } from "./id.js";
 import { extractContextFromMessage, normalizeMessage, routeEventType } from "./events.js";
 
@@ -13,7 +13,8 @@ const STREAM_FILES = {
 };
 
 const MANIFEST_DEBOUNCE_MS = 1000;
-const DEFAULT_MAX_PERSISTED_FRAMES = 1000;
+const DEFAULT_MAX_PERSISTED_FRAMES = 500;
+const DEFAULT_MAX_STREAM_EVENTS = 10000;
 
 export class TraceSession {
   constructor(store, { traceId, context } = {}) {
@@ -33,12 +34,17 @@ export class TraceSession {
     this.startedAt = new Date().toISOString();
     this.endedAt = null;
     this.dir = this.store.createTraceDir(this.traceId);
+    this.store.pruneTraces();
     this._manifestDirty = false;
     this._manifestTimer = null;
     this._streamPaths = {};
     this._evidenceFiles = [];
+    this._evidenceSeqs = new Map();
     this._maxPersistedFrames = Number(
       process.env.HARNESS_MAX_PERSISTED_FRAMES ?? DEFAULT_MAX_PERSISTED_FRAMES,
+    );
+    this._maxStreamEvents = Number(
+      process.env.HARNESS_MAX_STREAM_EVENTS ?? DEFAULT_MAX_STREAM_EVENTS,
     );
 
     for (const [stream, fileName] of Object.entries(STREAM_FILES)) {
@@ -68,6 +74,9 @@ export class TraceSession {
     appendJsonLine(this._streamPaths[stream], envelope);
     this.counts[stream] += 1;
     this._scheduleManifestWrite();
+    if (this.counts[stream] > this._maxStreamEvents) {
+      this._trimStream(stream);
+    }
     return envelope;
   }
 
@@ -93,15 +102,27 @@ export class TraceSession {
     this.writeManifest();
   }
 
-  registerEvidenceFile(filePath) {
+  registerEvidenceFile(filePath, eventSeq = null) {
     this._evidenceFiles.push(filePath);
+    if (eventSeq != null) {
+      this._evidenceSeqs.set(filePath, eventSeq);
+    }
+    const prunedSeqs = [];
     while (this._evidenceFiles.length > this._maxPersistedFrames) {
       const oldest = this._evidenceFiles.shift();
       if (oldest) {
+        const seq = this._evidenceSeqs.get(oldest);
+        if (seq != null) {
+          prunedSeqs.push(seq);
+          this._evidenceSeqs.delete(oldest);
+        }
         try {
           fs.unlinkSync(oldest);
         } catch {}
       }
+    }
+    if (prunedSeqs.length > 0) {
+      this._removeEventsBySeq(prunedSeqs);
     }
   }
 
@@ -109,6 +130,19 @@ export class TraceSession {
     for (const filePath of Object.values(this._streamPaths)) {
       flushWriter(filePath);
     }
+  }
+
+  _trimStream(stream) {
+    const filePath = this._streamPaths[stream];
+    const kept = trimJsonLines(filePath, Math.floor(this._maxStreamEvents * 0.8));
+    this.counts[stream] = kept;
+  }
+
+  _removeEventsBySeq(seqs) {
+    const filePath = this._streamPaths.events;
+    const removed = removeLinesBySeq(filePath, seqs);
+    this.counts.events = Math.max(0, this.counts.events - removed);
+    this._scheduleManifestWrite();
   }
 
   _gzipStreams() {
