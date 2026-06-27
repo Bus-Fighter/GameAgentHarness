@@ -3,22 +3,27 @@ extends Node
 const ClientScript := preload("res://addons/game_agent_harness/harness_client.gd")
 
 const DEFAULT_POINTER_INJECT_MODE := "touch"
+const SETTINGS_SAVE_DEBOUNCE := 1.0
 
 var client: GameAgentHarnessClient
 var last_scene_path := ""
 var sample_timer := 0.0
 var sample_interval := 1.0
 var frame_timer := 0.0
-var last_frame_persisted := false
-var _paused := false
+var evidence_timer := 0.0
+var _evidence_interval := 5.0
 var _frame_interval := 0.2
 var _signal_subscriptions: Array[Dictionary] = []
 var _signal_connected_nodes: Dictionary = {}
 var _pointer_inject_mode := DEFAULT_POINTER_INJECT_MODE
+var _paused := false
+var _settings_dirty := false
+var _settings_save_timer := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_frame_interval = float(ProjectSettings.get_setting("game_agent_harness/runtime_viewport_interval", 0.2))
+	_frame_interval = float(ProjectSettings.get_setting("game_agent_harness/runtime_viewport_interval", 0.5))
+	_evidence_interval = float(ProjectSettings.get_setting("game_agent_harness/evidence_frame_interval", 5.0))
 	_pointer_inject_mode = str(ProjectSettings.get_setting("game_agent_harness/pointer_inject_mode", DEFAULT_POINTER_INJECT_MODE))
 	if _pointer_inject_mode != "mouse" and _pointer_inject_mode != "touch":
 		_pointer_inject_mode = DEFAULT_POINTER_INJECT_MODE
@@ -42,18 +47,26 @@ func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 
+	if _settings_dirty:
+		_settings_save_timer += delta
+		if _settings_save_timer >= SETTINGS_SAVE_DEBOUNCE:
+			_settings_dirty = false
+			_settings_save_timer = 0.0
+			ProjectSettings.save()
+
 	_emit_scene_if_changed(false)
 
 	sample_timer += delta
 	if sample_timer >= sample_interval:
 		sample_timer = 0.0
 		_emit_state_sample()
-		_send_viewport_frame(true)
 
 	frame_timer += delta
 	if frame_timer >= _frame_interval:
 		frame_timer = 0.0
 		_send_viewport_frame(false)
+
+	evidence_timer += delta
 
 func _input(event: InputEvent) -> void:
 	if Engine.is_editor_hint() or client == null:
@@ -65,14 +78,12 @@ func _input(event: InputEvent) -> void:
 			"y": event.position.y,
 			"buttonIndex": event.button_index
 		}, _current_scene_entity())
-		_send_viewport_frame(true, true)
 	elif event is InputEventScreenTouch and event.pressed:
 		client.send_event("input.pointer.pressed", {
 			"x": event.position.x,
 			"y": event.position.y,
 			"index": event.index
 		}, _current_scene_entity())
-		_send_viewport_frame(true, true)
 	elif event is InputEventKey and event.pressed:
 		client.send_event("input.action.pressed", {
 			"keycode": event.keycode,
@@ -117,6 +128,10 @@ func _send_viewport_frame(persist: bool, force: bool = false) -> void:
 		return
 	if not ProjectSettings.get_setting("game_agent_harness/runtime_capture_enabled", true):
 		return
+	if persist and not force:
+		if evidence_timer < _evidence_interval:
+			return
+		evidence_timer = 0.0
 	var image := _capture_viewport()
 	if image == null:
 		return
@@ -158,13 +173,18 @@ func _on_harness_control(message: Dictionary) -> void:
 		if not ProjectSettings.has_setting("game_agent_harness/runtime_capture_enabled"):
 			ProjectSettings.set_initial_value("game_agent_harness/runtime_capture_enabled", true)
 		ProjectSettings.set_setting("game_agent_harness/runtime_capture_enabled", enabled)
-		ProjectSettings.save()
+		_save_project_settings()
 		_log_info("runtime capture %s from dashboard" % ("enabled" if enabled else "disabled"))
 	elif action == "runtime_viewport_interval":
 		_frame_interval = clampf(float(message.get("interval", 0.2)), 0.05, 2.0)
 		ProjectSettings.set_setting("game_agent_harness/runtime_viewport_interval", _frame_interval)
-		ProjectSettings.save()
+		_save_project_settings()
 		_log_info("runtime viewport interval set to %.2fs from dashboard" % _frame_interval)
+	elif action == "evidence_frame_interval":
+		_set_evidence_interval(clampf(float(message.get("interval", 5.0)), 0.5, 60.0))
+		ProjectSettings.set_setting("game_agent_harness/evidence_frame_interval", _evidence_interval)
+		_save_project_settings()
+		_log_info("evidence frame interval set to %.2fs from dashboard" % _evidence_interval)
 	elif action == "signal.subscribe":
 		_signal_subscriptions.append({
 			"match": message.get("match", {}),
@@ -222,6 +242,16 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 
 	Input.parse_input_event(event)
 
+func _set_frame_interval(interval: float) -> void:
+	_frame_interval = clampf(interval, 0.05, 2.0)
+
+func _set_evidence_interval(interval: float) -> void:
+	_evidence_interval = clampf(interval, 0.5, 60.0)
+
+func _save_project_settings() -> void:
+	_settings_dirty = true
+	_settings_save_timer = 0.0
+
 func _set_pointer_inject_mode(mode: String) -> void:
 	var normalized := mode.to_lower()
 	if normalized != "touch" and normalized != "mouse":
@@ -230,7 +260,7 @@ func _set_pointer_inject_mode(mode: String) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/pointer_inject_mode"):
 		ProjectSettings.set_initial_value("game_agent_harness/pointer_inject_mode", DEFAULT_POINTER_INJECT_MODE)
 	ProjectSettings.set_setting("game_agent_harness/pointer_inject_mode", _pointer_inject_mode)
-	ProjectSettings.save()
+	_save_project_settings()
 	_log_info("pointer inject mode set to %s from dashboard" % _pointer_inject_mode)
 
 func _scan_scene_for_subscriptions() -> void:

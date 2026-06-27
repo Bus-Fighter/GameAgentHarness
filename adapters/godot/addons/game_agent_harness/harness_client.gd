@@ -86,10 +86,15 @@ func send_event(event_type: String, data: Dictionary = {}, entity: Dictionary = 
 
 var _last_frame_hash: int = 0
 var _last_frame_hash_count: int = 0
+var _last_image_sample_hash: int = 0
 
 func send_frame(image: Image, source: String = "viewport", persist: bool = false, force: bool = false) -> void:
 	if image == null:
 		return
+	var sample_hash := _hash_image_samples(image)
+	if not force and not persist and sample_hash == _last_image_sample_hash:
+		return
+	_last_image_sample_hash = sample_hash
 	var resized := _resize_image(image)
 	var quality: float = float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
 	var buffer := resized.save_jpg_to_buffer(quality)
@@ -132,6 +137,20 @@ func _hash_buffer(buffer: PackedByteArray) -> int:
 		h = (h * 31 + buffer[i]) & 0x7FFFFFFF
 		i += step
 	return h
+
+func _hash_image_samples(image: Image) -> int:
+	var w := image.get_width()
+	var h := image.get_height()
+	if w <= 0 or h <= 0:
+		return 0
+	var h_out := 0
+	var samples := 8
+	for i in range(samples):
+		var x := (w * (i + 1)) / (samples + 1)
+		var y := (h * ((i * 7) % samples + 1)) / (samples + 1)
+		var color := image.get_pixel(x, y)
+		h_out = (h_out * 31 + color.to_rgba32()) & 0x7FFFFFFF
+	return h_out
 
 func _resize_image(image: Image) -> Image:
 	var max_dim := max(image.get_width(), image.get_height())

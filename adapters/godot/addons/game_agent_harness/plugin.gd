@@ -5,6 +5,7 @@ const ClientScript := preload("res://addons/game_agent_harness/harness_client.gd
 const DashboardPanelScript := preload("res://addons/game_agent_harness/editor_dashboard_panel.gd")
 const RuntimeAutoloadName := "GameAgentHarnessRuntime"
 const RuntimeAutoloadPath := "res://addons/game_agent_harness/runtime_recorder.gd"
+const SETTINGS_SAVE_DEBOUNCE := 1.0
 
 var client: GameAgentHarnessClient
 var editor_selection: EditorSelection
@@ -28,6 +29,8 @@ var _scene_tree_cache: Dictionary = {}
 var _scene_tree_cache_at := 0.0
 var _SCENE_TREE_CACHE_TTL := 1.0
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
+var _settings_dirty := false
+var _settings_save_timer := 0.0
 
 func _enter_tree() -> void:
 	client = ClientScript.new()
@@ -63,6 +66,13 @@ func _enter_tree() -> void:
 	set_process(true)
 
 func _process(delta: float) -> void:
+	if _settings_dirty:
+		_settings_save_timer += delta
+		if _settings_save_timer >= SETTINGS_SAVE_DEBOUNCE:
+			_settings_dirty = false
+			_settings_save_timer = 0.0
+			ProjectSettings.save()
+
 	_log_poll_timer += delta
 	if _log_poll_timer >= _log_poll_interval:
 		_log_poll_timer = 0.0
@@ -120,8 +130,12 @@ func _set_log_level(level: String) -> void:
 		return
 	_log_level = normalized
 	ProjectSettings.set_setting("game_agent_harness/log_level", _log_level)
-	ProjectSettings.save()
+	_save_project_settings()
 	_log_info("log level set to %s" % _log_level)
+
+func _save_project_settings() -> void:
+	_settings_dirty = true
+	_settings_save_timer = 0.0
 
 func _should_log(level: String) -> bool:
 	if _log_level == "off":
@@ -168,13 +182,24 @@ func _on_harness_control(message: Dictionary) -> void:
 		_editor_viewport_interval = clampf(float(message.get("interval", 0.2)), 0.05, 2.0)
 		ProjectSettings.set_setting("game_agent_harness/editor_viewport_enabled", _editor_viewport_enabled)
 		ProjectSettings.set_setting("game_agent_harness/editor_viewport_interval", _editor_viewport_interval)
-		ProjectSettings.save()
+		_save_project_settings()
 		_send_history("dashboard", "editor_viewport", { "enabled": _editor_viewport_enabled, "interval": _editor_viewport_interval })
 	elif action == "runtime_viewport_interval":
 		var interval := clampf(float(message.get("interval", 0.2)), 0.05, 2.0)
 		ProjectSettings.set_setting("game_agent_harness/runtime_viewport_interval", interval)
-		ProjectSettings.save()
+		_save_project_settings()
+		var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
+		if runtime != null and runtime.has_method("_set_frame_interval"):
+			runtime._set_frame_interval(interval)
 		_send_history("dashboard", "runtime_viewport_interval", { "interval": interval })
+	elif action == "evidence_frame_interval":
+		var interval := clampf(float(message.get("interval", 5.0)), 0.5, 60.0)
+		ProjectSettings.set_setting("game_agent_harness/evidence_frame_interval", interval)
+		_save_project_settings()
+		var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
+		if runtime != null and runtime.has_method("_set_evidence_interval"):
+			runtime._set_evidence_interval(interval)
+		_send_history("dashboard", "evidence_frame_interval", { "interval": interval })
 	elif action == "inspector_config":
 		_inspector_enabled = bool(message.get("inspector_enabled", _inspector_enabled))
 		_signals_enabled = bool(message.get("signals_enabled", _signals_enabled))
@@ -182,7 +207,7 @@ func _on_harness_control(message: Dictionary) -> void:
 		ProjectSettings.set_setting("game_agent_harness/inspector_enabled", _inspector_enabled)
 		ProjectSettings.set_setting("game_agent_harness/signals_enabled", _signals_enabled)
 		ProjectSettings.set_setting("game_agent_harness/history_enabled", _history_enabled)
-		ProjectSettings.save()
+		_save_project_settings()
 		_send_history("dashboard", "inspector_config", { "inspector_enabled": _inspector_enabled, "signals_enabled": _signals_enabled, "history_enabled": _history_enabled })
 	elif action == "log.level":
 		_set_log_level(str(message.get("level", _log_level)))
