@@ -65,40 +65,75 @@ export function buildDashboardHtml() {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      height: var(--header-h);
-      padding: 0 16px;
+      min-height: var(--header-h);
+      padding: 8px 16px;
       background: rgba(15, 23, 42, 0.96);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
     }
 
+    @media (min-width: 640px) {
+      .status-header { height: var(--header-h); padding: 0 16px; }
+    }
+
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       font-weight: 600;
-      font-size: 1rem;
+      font-size: 0.9rem;
       letter-spacing: -0.01em;
+      flex-shrink: 0;
+    }
+
+    .brand-text {
+      display: inline;
+    }
+
+    .brand-text .small { display: none; }
+
+    @media (min-width: 640px) {
+      .brand { font-size: 1rem; gap: 10px; }
+    }
+
+    @media (max-width: 639px) {
+      .brand-text .full { display: none; }
+      .brand-text .small { display: inline; }
     }
 
     .status-pills {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    @media (min-width: 640px) {
+      .status-pills { gap: 8px; flex-wrap: nowrap; }
     }
 
     .pill {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 10px;
+      padding: 4px 8px;
       border-radius: 999px;
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 600;
       background: var(--surface);
       color: var(--muted);
       border: 1px solid var(--border);
       white-space: nowrap;
+      max-width: 120px;
+    }
+
+    @media (min-width: 640px) {
+      .pill {
+        padding: 5px 10px;
+        font-size: 0.75rem;
+        max-width: none;
+      }
     }
 
     .pill .dot {
@@ -147,20 +182,25 @@ export function buildDashboardHtml() {
       flex: 1;
       display: grid;
       grid-template-columns: 1fr;
-      gap: 16px;
-      padding: 16px;
-      padding-bottom: calc(var(--toolbar-h) + 24px);
+      gap: 12px;
+      padding: 12px;
+      padding-bottom: calc(var(--toolbar-h) + 20px);
     }
 
     .tab-panel {
       display: none;
-      gap: 16px;
+      gap: 12px;
     }
 
     .tab-panel.active {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 16px;
+      gap: 12px;
+    }
+
+    @media (min-width: 640px) {
+      main { gap: 16px; padding: 16px; padding-bottom: calc(var(--toolbar-h) + 24px); }
+      .tab-panel, .tab-panel.active { gap: 16px; }
     }
 
     @media (min-width: 1024px) {
@@ -264,30 +304,46 @@ export function buildDashboardHtml() {
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 24px;
+      padding: 16px;
       color: var(--muted);
-      gap: 8px;
+      gap: 6px;
+    }
+
+    @media (min-width: 640px) {
+      .viewport-placeholder { padding: 24px; gap: 8px; }
     }
 
     .viewport-placeholder svg {
-      width: 48px;
-      height: 48px;
+      width: 36px;
+      height: 36px;
       color: var(--surface-2);
-      margin-bottom: 8px;
+      margin-bottom: 4px;
+    }
+
+    @media (min-width: 640px) {
+      .viewport-placeholder svg { width: 48px; height: 48px; margin-bottom: 8px; }
     }
 
     .viewport-placeholder h3 {
       margin: 0;
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: var(--text);
       font-weight: 600;
     }
 
+    @media (min-width: 640px) {
+      .viewport-placeholder h3 { font-size: 1rem; }
+    }
+
     .viewport-placeholder p {
       margin: 0;
-      font-size: 0.85rem;
+      font-size: 0.78rem;
       max-width: 320px;
-      line-height: 1.55;
+      line-height: 1.5;
+    }
+
+    @media (min-width: 640px) {
+      .viewport-placeholder p { font-size: 0.85rem; line-height: 1.55; }
     }
 
     .viewport-overlay {
@@ -525,6 +581,13 @@ export function buildDashboardHtml() {
 
     @media (min-width: 640px) {
       .diagnostics-body { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 639px) {
+      .diagnostics-body {
+        max-height: 200px;
+        overflow-y: auto;
+      }
     }
 
     .diag-row {
@@ -931,6 +994,8 @@ export function buildDashboardHtml() {
       overflow-x: auto;
       scrollbar-width: none;
       -ms-overflow-style: none;
+      position: relative;
+      z-index: 55;
     }
 
     .mobile-tabs::-webkit-scrollbar { display: none; }
@@ -948,6 +1013,10 @@ export function buildDashboardHtml() {
       cursor: pointer;
       transition: background var(--transition), color var(--transition), border-color var(--transition);
       white-space: nowrap;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      z-index: 1;
     }
 
     .mobile-tab:hover, .mobile-tab:focus-visible {
@@ -1005,14 +1074,14 @@ export function buildDashboardHtml() {
           <path d="M2 17l10 5 10-5"></path>
           <path d="M2 12l10 5 10-5"></path>
         </svg>
-        <span>Game Agent Harness</span>
+        <span class="brand-text"><span class="full">Game Agent Harness</span><span class="small">Harness</span></span>
       </div>
       <div class="status-pills">
         <button id="connection-pill" class="pill offline" aria-label="Reconnect">
           <span class="dot"></span>
           <span id="connection-pill-text">Offline</span>
         </button>
-        <span id="trace-pill" class="pill">No trace</span>
+        <span id="trace-pill" class="pill truncate" style="max-width: 110px;">No trace</span>
         <span id="pause-pill" class="pill" style="display:none;">Paused</span>
         <span id="engine-pill" class="pill offline"><span class="dot"></span><span id="engine-pill-text">No engine</span></span>
       </div>
@@ -1977,16 +2046,24 @@ export function buildDashboardHtml() {
       (function setupMobileTabs() {
         const tabs = document.querySelectorAll(".mobile-tab");
         const panels = document.querySelectorAll(".tab-panel");
+        function setTab(name) {
+          tabs.forEach((t) => {
+            const active = t.dataset.tab === name;
+            t.classList.toggle("active", active);
+            t.setAttribute("aria-selected", String(active));
+          });
+          panels.forEach((p) => {
+            p.classList.toggle("active", p.dataset.panel === name);
+          });
+        }
         tabs.forEach((tab) => {
-          tab.addEventListener("click", () => {
-            const name = tab.dataset.tab;
-            tabs.forEach((t) => {
-              t.classList.toggle("active", t.dataset.tab === name);
-              t.setAttribute("aria-selected", String(t.dataset.tab === name));
-            });
-            panels.forEach((p) => {
-              p.classList.toggle("active", p.dataset.panel === name);
-            });
+          tab.addEventListener("click", (e) => {
+            e.preventDefault();
+            setTab(tab.dataset.tab);
+          });
+          tab.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            setTab(tab.dataset.tab);
           });
         });
       })();
