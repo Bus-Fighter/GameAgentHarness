@@ -15,7 +15,6 @@ var _intake_url_label: Label
 var _start_button: Button
 var _stop_button: Button
 var _open_button: Button
-var _editor_toggle: CheckButton
 var _runtime_toggle: CheckButton
 var _path_line: LineEdit
 var _intake_url_line: LineEdit
@@ -45,7 +44,7 @@ func _build_ui() -> void:
 	vbox.add_child(title)
 
 	var desc := Label.new()
-	desc.text = "Start the local harness dashboard to stream editor and runtime visuals to your browser."
+	desc.text = "Start the local harness dashboard to stream runtime visuals to your browser."
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc.custom_minimum_size = Vector2(0, 40)
 	vbox.add_child(desc)
@@ -53,13 +52,6 @@ func _build_ui() -> void:
 	var toggles := HBoxContainer.new()
 	toggles.add_theme_constant_override("separation", 16)
 	vbox.add_child(toggles)
-
-	_editor_toggle = CheckButton.new()
-	_editor_toggle.text = "Editor capture"
-	_editor_toggle.tooltip_text = "Stream editor viewport frames to the dashboard."
-	_editor_toggle.button_pressed = _read_project_setting("game_agent_harness/editor_capture_enabled", true)
-	_editor_toggle.toggled.connect(_on_editor_toggled)
-	toggles.add_child(_editor_toggle)
 
 	_runtime_toggle = CheckButton.new()
 	_runtime_toggle.text = "Runtime capture"
@@ -202,9 +194,6 @@ func _on_intake_url_changed(new_text: String) -> void:
 		ProjectSettings.set_initial_value("game_agent_harness/intake_url", "ws://127.0.0.1:8765")
 	ProjectSettings.set_setting("game_agent_harness/intake_url", url)
 	ProjectSettings.save()
-
-func _on_editor_toggled(enabled: bool) -> void:
-	_set_capture_enabled("editor_capture_enabled", enabled)
 
 func _on_runtime_toggled(enabled: bool) -> void:
 	_set_capture_enabled("runtime_capture_enabled", enabled)

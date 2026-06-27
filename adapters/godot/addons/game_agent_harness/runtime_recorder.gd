@@ -9,6 +9,7 @@ var sample_interval := 1.0
 var frame_interval := 0.2
 var frame_timer := 0.0
 var last_frame_persisted := false
+var _paused := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -117,3 +118,62 @@ func _capture_viewport() -> Image:
 func _current_scene_entity() -> Dictionary:
 	var scene := get_tree().current_scene if get_tree() != null else null
 	return GameAgentHarnessClient.node_entity(scene)
+
+func _on_harness_control(message: Dictionary) -> void:
+	var action := str(message.get("action", ""))
+	if action == "snapshot":
+		_take_snapshot()
+	elif action == "pause":
+		_set_paused(bool(message.get("enabled", true)))
+	elif action == "input.pointer":
+		_inject_pointer_input(
+			str(message.get("phase", "pressed")),
+			float(message.get("x", 0.0)),
+			float(message.get("y", 0.0)),
+			int(message.get("button", 0))
+		)
+
+func _take_snapshot() -> void:
+	if client == null:
+		return
+	var image := _capture_viewport()
+	if image == null:
+		push_warning("[GameAgentHarness] snapshot failed: could not capture viewport")
+		return
+	client.send_frame(image, "runtime", true)
+	client.send_event("snapshot.taken", {
+		"width": image.get_width(),
+		"height": image.get_height()
+	}, _current_scene_entity())
+
+func _set_paused(enabled: bool) -> void:
+	if _paused == enabled:
+		return
+	_paused = enabled
+	Engine.time_scale = 0.0 if enabled else 1.0
+	if client != null:
+		client.send_event("pause.changed", { "enabled": enabled }, _current_scene_entity())
+	push_warning("[GameAgentHarness] runtime %s from dashboard" % ("paused" if enabled else "resumed"))
+
+func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: int) -> void:
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var size := viewport.get_visible_rect().size
+	var pos := Vector2(nx * size.x, ny * size.y)
+
+	var event: InputEvent
+	if DisplayServer.is_touchscreen_available():
+		var touch := InputEventScreenTouch.new()
+		touch.position = pos
+		touch.pressed = phase != "released"
+		touch.index = button_index
+		event = touch
+	else:
+		var mouse := InputEventMouseButton.new()
+		mouse.position = pos
+		mouse.button_index = clampi(button_index, 1, 9)
+		mouse.pressed = phase != "released"
+		event = mouse
+
+	Input.parse_input_event(event)

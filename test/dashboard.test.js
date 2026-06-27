@@ -154,6 +154,13 @@ test("dashboard serves HTML and status", async (t) => {
   assert.equal(index.status, 200);
   assert.match(index.body.toString("utf8"), /Game Agent Harness/);
   assert.match(index.body.toString("utf8"), /viewport-fit=cover/);
+  assert.match(index.body.toString("utf8"), /id="runtime-toggle"/);
+  assert.match(index.body.toString("utf8"), /id="events-list"/);
+  assert.match(index.body.toString("utf8"), /id="live-img"/);
+  assert.match(index.body.toString("utf8"), /Runtime capture/);
+  const scriptMatch = index.body.toString("utf8").match(/\u003cscript\u003e([\s\S]*?)\u003c\/script\u003e/);
+  assert.ok(scriptMatch);
+  assert.doesNotThrow(() => new Function(scriptMatch[1]));
 
   const status = await fetchJson("/api/status", DASHBOARD_PORT);
   assert.equal(status.traceActive, false);
@@ -294,14 +301,48 @@ test("dashboard can send control messages to engine clients", async (t) => {
 
   dashboard.send({
     kind: "control",
-    action: "live_capture",
+    action: "runtime_capture",
     enabled: false,
   });
 
   const controlMsg = await engine.nextMessage();
   assert.equal(controlMsg.kind, "control");
-  assert.equal(controlMsg.action, "live_capture");
+  assert.equal(controlMsg.action, "runtime_capture");
   assert.equal(controlMsg.enabled, false);
+
+  engine.close();
+  dashboard.close();
+});
+
+test("dashboard forwards snapshot, pause, and input.pointer controls to engine clients", async (t) => {
+  const { host } = await createHost(t);
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const engineHello = await engine.nextMessage();
+  assert.equal(engineHello.kind, "host.hello");
+
+  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
+  const dashboardHello = await dashboard.nextMessage();
+  assert.equal(dashboardHello.kind, "hello");
+
+  dashboard.send({ kind: "control", action: "snapshot" });
+  let msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "snapshot");
+
+  dashboard.send({ kind: "control", action: "pause", enabled: true });
+  msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "pause");
+  assert.equal(msg.enabled, true);
+
+  dashboard.send({ kind: "control", action: "input.pointer", phase: "pressed", x: 0.5, y: 0.5, button: 1 });
+  msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "input.pointer");
+  assert.equal(msg.phase, "pressed");
+  assert.equal(msg.x, 0.5);
+  assert.equal(msg.y, 0.5);
 
   engine.close();
   dashboard.close();

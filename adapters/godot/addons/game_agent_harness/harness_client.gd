@@ -154,12 +154,12 @@ func _handle_host_message(message: Variant) -> void:
 
 func _handle_control_message(message: Dictionary) -> void:
 	var action := str(message.get("action", ""))
-	if action == "live_capture":
-		_set_capture_enabled("live_capture_enabled", bool(message.get("enabled", true)))
-	elif action == "editor_capture":
-		_set_capture_enabled("editor_capture_enabled", bool(message.get("enabled", true)))
-	elif action == "runtime_capture":
+	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
+	elif action == "snapshot" or action == "pause" or action == "input.pointer":
+		var parent := get_parent()
+		if parent != null and parent.has_method("_on_harness_control"):
+			parent._on_harness_control(message)
 
 func _set_capture_enabled(key: String, enabled: bool) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/" + key):

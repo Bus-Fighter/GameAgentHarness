@@ -29,7 +29,6 @@ func _enter_tree() -> void:
 
 	client.send_event("plugin.enabled", {})
 	_emit_editor_context()
-	_send_editor_frame(true)
 
 func _exit_tree() -> void:
 	remove_tool_menu_item("Start Game Agent Harness")
@@ -68,7 +67,6 @@ func _on_selection_changed() -> void:
 		"count": selected.size(),
 		"selected": selected
 	}, primary)
-	_send_editor_frame(true)
 
 func _emit_editor_context() -> void:
 	var edited_scene_root := get_editor_interface().get_edited_scene_root()
@@ -76,46 +74,3 @@ func _emit_editor_context() -> void:
 	client.send_event("editor.context", {
 		"editedSceneRoot": entity
 	}, entity)
-
-func _send_editor_frame(persist: bool) -> void:
-	if client == null:
-		return
-	if not ProjectSettings.get_setting("game_agent_harness/editor_capture_enabled", true):
-		return
-	var image := _capture_editor_viewport()
-	if image == null:
-		return
-	client.send_frame(image, "editor", persist)
-
-func _capture_editor_viewport() -> Image:
-	var candidates: Array[Viewport] = []
-
-	var main_screen := get_editor_interface().get_editor_main_screen()
-	if main_screen != null:
-		candidates.append(main_screen.get_viewport())
-
-	var base := get_editor_interface().get_base_control()
-	if base != null:
-		candidates.append(base.get_viewport())
-
-	var vp2d := get_editor_interface().get_editor_viewport_2d()
-	if vp2d != null:
-		candidates.append(vp2d)
-
-	var vp3d := get_editor_interface().get_editor_viewport_3d()
-	if vp3d != null:
-		candidates.append(vp3d)
-
-	for viewport in candidates:
-		if viewport == null:
-			continue
-		var texture := viewport.get_texture()
-		if texture == null:
-			continue
-		var image := texture.get_image()
-		if image == null:
-			continue
-		if image.get_width() >= 8 and image.get_height() >= 8:
-			return image
-
-	return null
