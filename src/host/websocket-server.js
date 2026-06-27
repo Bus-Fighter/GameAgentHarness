@@ -1,10 +1,13 @@
 import net from "node:net";
 import { buildHandshakeResponse, decodeFrames, encodeTextFrame } from "./websocket-codec.js";
 
+const DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
+
 export class WebSocketServer {
-  constructor({ port = 8765, host = "127.0.0.1", onMessage, onConnection, onClose } = {}) {
+  constructor({ port = 8765, host = "127.0.0.1", maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE, onMessage, onConnection, onClose } = {}) {
     this.port = port;
     this.host = host;
+    this.maxMessageSize = maxMessageSize;
     this.onMessage = onMessage;
     this.onConnection = onConnection;
     this.onClose = onClose;
@@ -37,6 +40,10 @@ export class WebSocketServer {
 
     socket.on("data", (chunk) => {
       if (!handshaken) {
+        if (pending.length + chunk.length > this.maxMessageSize) {
+          socket.destroy();
+          return;
+        }
         pending = Buffer.concat([pending, chunk]);
         const requestText = pending.toString("utf8");
         const end = requestText.indexOf("\r\n\r\n");
@@ -65,12 +72,16 @@ export class WebSocketServer {
           pending = Buffer.alloc(0);
         }
       } else {
+        if (pending.length + chunk.length > this.maxMessageSize) {
+          socket.destroy();
+          return;
+        }
         pending = Buffer.concat([pending, chunk]);
       }
 
       if (pending.length > 0) {
         const decoded = decodeFrames(pending);
-        pending = Buffer.from(decoded.remaining);
+        pending = decoded.remaining;
         for (const message of decoded.messages) {
           if (message === null) {
             socket.end();
@@ -94,5 +105,9 @@ export class WebSocketServer {
   send(socket, value) {
     const text = typeof value === "string" ? value : JSON.stringify(value);
     socket.write(encodeTextFrame(text));
+  }
+
+  sendFrame(socket, frame) {
+    socket.write(frame);
   }
 }

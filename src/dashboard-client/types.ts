@@ -28,12 +28,26 @@ export interface HelloMessage {
   traceId: string | null;
 }
 
+export interface StatusMessage {
+  kind: "status";
+  traceActive: boolean;
+  traceId: string | null;
+  dashboardClients: number;
+  dashboardWsClients: number;
+  dashboardSseClients: number;
+  engineClients: number;
+  lastEngineAt: string | null;
+  intakeUrl: string;
+  latestFrame: FrameMessage | null;
+}
+
 export type WebSocketMessage =
   | FrameMessage
   | TraceMessage
   | EventMessage
   | ContextMessage
   | HelloMessage
+  | StatusMessage
   | { kind: "pong" };
 
 export interface HarnessEvent {

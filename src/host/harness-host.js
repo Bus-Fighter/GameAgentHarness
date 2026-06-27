@@ -2,6 +2,7 @@ import { ArtifactStore } from "../core/artifact-store.js";
 import { TraceSession } from "../core/trace-session.js";
 import { buildSummary } from "../core/summary-builder.js";
 import { WebSocketServer } from "./websocket-server.js";
+import { encodeTextFrame } from "./websocket-codec.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
 import { findGodotBin, launchEditor, killProcess } from "../core/editor-launcher.js";
@@ -30,7 +31,7 @@ export class HarnessHost {
       host: this.host,
       onConnection: (socket) => this.onConnection(socket),
       onMessage: (socket, message) => this.onMessage(socket, message),
-      onClose: () => {},
+      onClose: () => this.dashboard?.broadcastStatus(),
     });
     this.frameStore = new FrameStore();
     this.dashboard = dashboard
@@ -44,6 +45,7 @@ export class HarnessHost {
           lastEngineAt: () => this.lastEngineAt,
           onControlMessage: (message) => this.handleDashboardControl(message),
           getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
+          onFlushTrace: () => this.trace?.flush(),
         })
       : null;
     this.liveFrameSeq = 0;
@@ -70,6 +72,7 @@ export class HarnessHost {
 
   onConnection(socket) {
     this.lastEngineAt = new Date().toISOString();
+    this.dashboard?.broadcastStatus();
     this.server.send(socket, {
       kind: "host.hello",
       host: "game-agent-harness",
@@ -148,7 +151,8 @@ export class HarnessHost {
     if (message.persist && this.trace) {
       seq = this.trace.nextSeq();
       fileName = `frame-${seq}.${format}`;
-      this.store.writeBinary(this.trace.traceId, path.join("evidence", fileName), buffer);
+      const evidencePath = this.store.writeBinary(this.trace.traceId, path.join("evidence", fileName), buffer);
+      this.trace.registerEvidenceFile(evidencePath);
       const event = this.trace.append({
         kind: "event",
         type: "evidence.frame",
@@ -191,9 +195,11 @@ export class HarnessHost {
 
   forwardControlToEngine(message) {
     const payload = { kind: "control", ...message };
+    const text = JSON.stringify(payload);
+    const frame = encodeTextFrame(text);
     for (const client of this.server.clients) {
       try {
-        this.server.send(client, payload);
+        this.server.sendFrame(client, frame);
       } catch {}
     }
   }

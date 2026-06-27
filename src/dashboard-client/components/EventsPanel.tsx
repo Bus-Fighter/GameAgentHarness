@@ -1,4 +1,4 @@
-import { useState, startTransition, ViewTransition } from "react";
+import { useState, useMemo, memo, startTransition, ViewTransition } from "react";
 import { Zap, ScrollText, Trash2 } from "lucide-react";
 import { PanelHeaderActions } from "./PanelHeaderActions";
 import { FullscreenOverlay } from "./FullscreenOverlay";
@@ -90,7 +90,7 @@ function logBadgeClass(level: HarnessLog["level"]) {
   return "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]";
 }
 
-export function EventsPanel({
+export const EventsPanel = memo(function EventsPanel({
   events,
   logs,
   fontSize = 14,
@@ -103,10 +103,13 @@ export function EventsPanel({
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
-  const filteredLogs = logs.filter((log) => {
-    if (logLevel === "all") return true;
-    return LEVEL_ORDER[log.level] >= LEVEL_ORDER[logLevel];
-  });
+  const filteredLogs = useMemo(() => {
+    if (logLevel === "all") return logs;
+    return logs.filter((log) => LEVEL_ORDER[log.level] >= LEVEL_ORDER[logLevel]);
+  }, [logs, logLevel]);
+
+  const reversedEvents = useMemo(() => [...events].reverse(), [events]);
+  const reversedLogs = useMemo(() => [...filteredLogs].reverse(), [filteredLogs]);
 
   const eventsContent = (
     <div className="min-h-0 flex-1 overflow-auto p-0">
@@ -114,7 +117,7 @@ export function EventsPanel({
         <div className="p-4 text-center text-sm text-[var(--muted)]">No events yet.</div>
       ) : (
         <ul className="divide-y divide-[var(--border)]">
-          {[...events].reverse().map((ev) => (
+          {reversedEvents.map((ev) => (
             <li key={ev.seq} className="flex items-start gap-3 p-3" style={{ fontSize: `${fontSize}px` }}>
               <span className={`mt-0.5 text-xs font-semibold ${eventClass(ev.type)}`}>
                 {eventIcon(ev.type)}
@@ -165,7 +168,7 @@ export function EventsPanel({
           <div className="p-4 text-center text-sm text-[var(--muted)]">No logs yet.</div>
         ) : (
           <ul className="divide-y divide-[var(--border)] font-mono">
-            {[...filteredLogs].reverse().map((log) => (
+            {reversedLogs.map((log) => (
               <li
                 key={log.seq}
                 className="flex items-start gap-2 p-2 text-xs leading-relaxed"
@@ -249,4 +252,4 @@ export function EventsPanel({
       )}
     </>
   );
-}
+});

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readJsonLines } from "./jsonl.js";
+import { readJsonLinesSync } from "./jsonl.js";
 
 export const STREAM_FILES = {
   events: "events.jsonl",
@@ -23,7 +23,7 @@ export function readTrace(store, traceId) {
   const streams = Object.fromEntries(
     Object.entries(STREAM_FILES).map(([stream, fileName]) => [
       stream,
-      readJsonLines(path.join(dir, fileName)).map((item) => ({ ...item, stream })),
+      readJsonLinesSync(path.join(dir, fileName)).map((item) => ({ ...item, stream })),
     ]),
   );
 

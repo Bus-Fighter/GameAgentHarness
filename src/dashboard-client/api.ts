@@ -69,6 +69,6 @@ export async function gitReset(path: string): Promise<void> {
   if (!res.ok) throw new Error("HTTP " + res.status);
 }
 
-export function getLiveFrameUrl(): string {
-  return API_BASE + "/live/frame?t=" + Date.now();
+export function getLiveFrameUrl(seq?: number): string {
+  return API_BASE + "/live/frame" + (seq != null ? `?seq=${seq}` : "");
 }

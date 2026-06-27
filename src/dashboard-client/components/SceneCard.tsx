@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { Boxes } from "lucide-react";
 import { PanelHeaderActions } from "./PanelHeaderActions";
 import type { HarnessContext } from "../types";
@@ -7,7 +7,19 @@ interface SceneCardProps {
   context: HarnessContext | null;
 }
 
-export function SceneCard({ context }: SceneCardProps) {
+function formatScene(scene: unknown): string {
+  if (scene == null) return "-";
+  if (typeof scene === "string") return scene;
+  if (typeof scene === "object") {
+    const obj = scene as Record<string, unknown>;
+    if (obj.path) return String(obj.path);
+    if (obj.name) return String(obj.name);
+    return JSON.stringify(scene);
+  }
+  return String(scene);
+}
+
+export const SceneCard = memo(function SceneCard({ context }: SceneCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const running = context?.runtime?.running ?? false;
   const project =
@@ -16,7 +28,7 @@ export function SceneCard({ context }: SceneCardProps) {
     "-";
   const engine =
     context?.observed?.engine?.name || context?.profile?.engine?.name || "-";
-  const scene = context?.scene || "-";
+  const scene = formatScene(context?.scene);
 
   return (
     <section className="card overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -60,4 +72,4 @@ export function SceneCard({ context }: SceneCardProps) {
       </div>
     </section>
   );
-}
+});

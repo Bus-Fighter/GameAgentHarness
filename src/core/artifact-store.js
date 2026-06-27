@@ -20,7 +20,7 @@ export class ArtifactStore {
   writeJson(traceId, fileName, value) {
     fs.writeFileSync(
       path.join(this.traceDir(traceId), fileName),
-      JSON.stringify(value, null, 2),
+      JSON.stringify(value),
       "utf8",
     );
   }

@@ -40,7 +40,7 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -55,6 +55,34 @@ export class DashboardServer {
     this.lastEngineAt = lastEngineAt;
     this.onControlMessage = onControlMessage;
     this.getRuntimeContext = getRuntimeContext;
+    this.onFlushTrace = onFlushTrace;
+  }
+
+  broadcastStatus() {
+    const frame = this.frameStore?.getFrame();
+    const status = {
+      kind: "status",
+      traceActive: Boolean(this.trace && !this.trace.endedAt),
+      traceId: this.trace?.traceId ?? null,
+      dashboardClients: this.clients.size + this.sseClients.size,
+      dashboardWsClients: this.clients.size,
+      dashboardSseClients: this.sseClients.size,
+      engineClients: this.engineClientCount?.() ?? 0,
+      lastEngineAt: this.lastEngineAt?.() ?? null,
+      intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
+      latestFrame: frame
+        ? {
+            contentType: frame.contentType,
+            source: frame.source,
+            width: frame.width,
+            height: frame.height,
+            seq: frame.seq,
+            traceId: frame.traceId,
+            receivedAt: frame.receivedAt,
+          }
+        : null,
+    };
+    this.broadcast(status);
   }
 
   setFrameStore(frameStore) {
@@ -66,11 +94,13 @@ export class DashboardServer {
     if (trace) {
       this.broadcast({ kind: "trace", traceId: trace.traceId, active: !trace.endedAt });
     }
+    this.broadcastStatus();
   }
 
   clearTrace() {
     this.trace = null;
     this.broadcast({ kind: "trace", traceId: null, active: false });
+    this.broadcastStatus();
   }
 
   start() {
@@ -193,6 +223,7 @@ export class DashboardServer {
       }
 
       if (segments[0] === "events") {
+        this.onFlushTrace?.();
         const trace = readTrace(this.store, traceId);
         const since = Number(url.searchParams.get("since") ?? 0);
         const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : null;
@@ -266,7 +297,7 @@ export class DashboardServer {
       socket.on("data", (chunk) => {
         pending = Buffer.concat([pending, chunk]);
         const decoded = decodeFrames(pending);
-        pending = Buffer.from(decoded.remaining);
+        pending = decoded.remaining;
         for (const message of decoded.messages) {
           if (message === null) {
             try {
@@ -281,13 +312,16 @@ export class DashboardServer {
 
       socket.on("close", () => {
         this.clients.delete(socket);
+        this.broadcastStatus();
       });
 
       socket.on("error", () => {
         this.clients.delete(socket);
+        this.broadcastStatus();
       });
 
       this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null, context: this.getRuntimeContext?.() ?? null });
+      this.broadcastStatus();
     } catch {
       socket.destroy();
     }
@@ -366,8 +400,10 @@ export class DashboardServer {
     res.write(":ok\n\n");
     this.sseClients.add(res);
     this.sendSse(JSON.stringify({ kind: "hello", traceId: this.trace?.traceId ?? null }));
+    this.broadcastStatus();
     res.on("close", () => {
       this.sseClients.delete(res);
+      this.broadcastStatus();
     });
   }
 
@@ -381,9 +417,9 @@ export class DashboardServer {
       seq: frame.seq,
       traceId: frame.traceId,
       receivedAt: frame.receivedAt,
-      data: frame.buffer.toString("base64"),
     };
     this.broadcast(payload);
+    this.broadcastStatus();
   }
 
   broadcastEvent(event) {

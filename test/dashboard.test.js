@@ -59,7 +59,7 @@ function connectWebSocket(url) {
           resolve({
             socket,
             send: (value) => socket.write(encodeTextFrame(JSON.stringify(value))),
-            nextMessage: (timeoutMs = 5000) => waitForMessage(messages, timeoutMs),
+            nextMessage: (kind = null, timeoutMs = 5000) => waitForMessage(messages, kind, timeoutMs),
             close: () => socket.end(),
           });
         } else {
@@ -89,13 +89,17 @@ function connectWebSocket(url) {
   });
 }
 
-function waitForMessage(messages, timeoutMs) {
+function waitForMessage(messages, kind = null, timeoutMs = 5000) {
   return new Promise((resolve) => {
     const start = Date.now();
     const check = setInterval(() => {
-      if (messages.length > 0) {
+      const index = messages.findIndex((msg) => {
+        if (kind != null) return msg?.kind === kind;
+        return msg?.kind !== "status";
+      });
+      if (index !== -1) {
         clearInterval(check);
-        resolve(messages.shift());
+        resolve(messages.splice(index, 1)[0]);
         return;
       }
       if (Date.now() - start > timeoutMs) {
@@ -191,7 +195,7 @@ test("live frame is broadcast to dashboard and available via API", async (t) => 
   assert.equal(frameMsg.width, 100);
   assert.equal(frameMsg.height, 80);
   assert.equal(frameMsg.source, "runtime");
-  assert.ok(frameMsg.data);
+  assert.equal(frameMsg.data, undefined);
 
   const live = await fetchHttp("/api/live/frame", DASHBOARD_PORT);
   assert.equal(live.status, 200);
@@ -391,7 +395,7 @@ test("SSE endpoint streams events when WebSocket is unavailable", async (t) => {
   });
 
   const deadline = Date.now() + 2000;
-  while (sseMessages.length < 2 && Date.now() < deadline) {
+  while (!sseMessages.find((m) => m.kind === "event") && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 

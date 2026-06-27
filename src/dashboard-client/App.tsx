@@ -78,6 +78,9 @@ export default function App() {
   const maxLogLinesRef = useRef(settings.maxLogLines);
   const maxHistoryEntriesRef = useRef(settings.maxHistoryEntries);
   const pendingSelectionPathRef = useRef<string | null>(null);
+  const latestRuntimeFrameRef = useRef<FrameMessage | null>(null);
+  const latestEditorFrameRef = useRef<FrameMessage | null>(null);
+  const frameThrottleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     maxLogLinesRef.current = settings.maxLogLines;
   }, [settings.maxLogLines]);
@@ -90,6 +93,23 @@ export default function App() {
       setActiveTab(tab);
     });
   }, []);
+
+  const flushFrameState = useCallback(() => {
+    frameThrottleTimerRef.current = null;
+    if (latestRuntimeFrameRef.current) {
+      setRuntimeFrame(latestRuntimeFrameRef.current);
+      latestRuntimeFrameRef.current = null;
+    }
+    if (latestEditorFrameRef.current) {
+      setEditorFrame(latestEditorFrameRef.current);
+      latestEditorFrameRef.current = null;
+    }
+  }, []);
+
+  const scheduleFrameFlush = useCallback(() => {
+    if (frameThrottleTimerRef.current) return;
+    frameThrottleTimerRef.current = setTimeout(flushFrameState, 33);
+  }, [flushFrameState]);
 
   const handleEvent = useCallback(
     (event: HarnessEvent) => {
@@ -233,15 +253,36 @@ export default function App() {
           break;
       case "frame":
         if (msg.source === "editor") {
-          setEditorFrame(msg);
+          latestEditorFrameRef.current = msg;
         } else {
-          setRuntimeFrame(msg);
+          latestRuntimeFrameRef.current = msg;
         }
+        scheduleFrameFlush();
         break;
         case "context":
           setContext(msg.context);
           if (msg.context.runtime?.running != null) {
             setRuntimeRunning(msg.context.runtime.running);
+          }
+          break;
+        case "status":
+          setStatus({
+            traceActive: msg.traceActive,
+            traceId: msg.traceId,
+            dashboardClients: msg.dashboardClients,
+            dashboardWsClients: msg.dashboardWsClients,
+            dashboardSseClients: msg.dashboardSseClients,
+            engineClients: msg.engineClients,
+            lastEngineAt: msg.lastEngineAt,
+            intakeUrl: msg.intakeUrl,
+            latestFrame: msg.latestFrame,
+          });
+          if (msg.latestFrame) {
+            if (msg.latestFrame.source === "editor") {
+              setEditorFrame(msg.latestFrame);
+            } else {
+              setRuntimeFrame(msg.latestFrame);
+            }
           }
           break;
         case "event":
@@ -260,13 +301,6 @@ export default function App() {
     },
     [send],
   );
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      fetchStatus().then(setStatus).catch(console.error);
-    }, 2000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     sendControl("runtime_viewport_interval", { interval: settings.runtimeViewportInterval });

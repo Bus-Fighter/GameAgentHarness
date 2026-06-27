@@ -1,4 +1,4 @@
-import { useState, startTransition, ViewTransition } from "react";
+import { useState, memo, startTransition, ViewTransition } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameUrl } from "../api";
 import { FullscreenOverlay } from "./FullscreenOverlay";
@@ -12,10 +12,10 @@ interface ViewportPanelProps {
   onPointer: (phase: string, event: React.MouseEvent | React.TouchEvent) => void;
 }
 
-export function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
+export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const imgUrl = frame && captureEnabled ? getLiveFrameUrl() : null;
+  const imgUrl = frame && captureEnabled ? getLiveFrameUrl(frame.seq) : null;
 
   const viewportContent = (
     <div className="relative h-full w-full bg-black">
@@ -132,4 +132,4 @@ export function ViewportPanel({ captureEnabled, frame, source, onSourceChange, o
       )}
     </>
   );
-}
+});
