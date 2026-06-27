@@ -15,6 +15,7 @@ interface CodeEditorProps {
   content: string;
   editable: boolean;
   onChange: (value: string) => void;
+  fontSize?: number;
 }
 
 function fileExtension(path: string) {
@@ -34,7 +35,7 @@ function languageSupport(ext: string) {
   return [];
 }
 
-export function CodeEditor({ path, content, editable, onChange }: CodeEditorProps) {
+export function CodeEditor({ path, content, editable, onChange, fontSize = 14 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
 
@@ -48,6 +49,11 @@ export function CodeEditor({ path, content, editable, onChange }: CodeEditorProp
         oneDark,
         languageSupport(ext),
         EditorView.editable.of(editable),
+        EditorView.theme({
+          "&.cm-editor": { fontSize: `${fontSize}px` },
+          ".cm-content": { fontSize: `${fontSize}px` },
+          ".cm-gutters": { fontSize: `${fontSize}px` },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChange(update.state.doc.toString());
@@ -61,7 +67,7 @@ export function CodeEditor({ path, content, editable, onChange }: CodeEditorProp
       view.destroy();
       viewRef.current = null;
     };
-  }, [path, content, editable, onChange]);
+  }, [path, content, editable, onChange, fontSize]);
 
   return <div ref={containerRef} className="h-full min-h-[240px]" />;
 }

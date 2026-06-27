@@ -1,6 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
-import { FileText, RefreshCw, GitBranch, FolderTree } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, startTransition, ViewTransition } from "react";
+import {
+  FileText,
+  RefreshCw,
+  GitBranch,
+  FolderTree,
+  Folder,
+  ChevronLeft,
+  Home,
+} from "lucide-react";
 import { CodeEditor } from "./CodeEditor";
+import { PanelHeaderActions } from "./PanelHeaderActions";
+import { FullscreenOverlay } from "./FullscreenOverlay";
 import {
   fetchGitStatus,
   fetchGitDiff,
@@ -11,12 +21,41 @@ import {
   gitUnstage,
   gitReset,
 } from "../api";
-import type { GitFile, FileEntry } from "../types";
+import type { GitFile, FileEntry, ResourcePreview, ResourceImportSettings } from "../types";
 
-export function FileReviewPanel() {
+interface FileReviewPanelProps {
+  fontSize?: number;
+  preview?: ResourcePreview | null;
+  importSettings?: ResourceImportSettings | null;
+  onRequestPreview?: (path: string) => void;
+  onRequestImportSettings?: (path: string) => void;
+}
+
+function isResourcePath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    lower.endsWith(".png") ||
+    lower.endsWith(".jpg") ||
+    lower.endsWith(".jpeg") ||
+    lower.endsWith(".webp") ||
+    lower.endsWith(".tscn") ||
+    lower.endsWith(".tres") ||
+    lower.endsWith(".material") ||
+    lower.endsWith(".shader")
+  );
+}
+
+export function FileReviewPanel({
+  fontSize = 14,
+  preview,
+  importSettings,
+  onRequestPreview,
+  onRequestImportSettings,
+}: FileReviewPanelProps) {
   const [tab, setTab] = useState<"git" | "project">("git");
   const [gitFiles, setGitFiles] = useState<GitFile[]>([]);
   const [tree, setTree] = useState<FileEntry[]>([]);
+  const [currentPath, setCurrentPath] = useState<string>(".");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
   const [diff, setDiff] = useState<string>("");
@@ -24,6 +63,8 @@ export function FileReviewPanel() {
   const [autoSave, setAutoSave] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const loadGit = useCallback(async () => {
     try {
@@ -38,6 +79,7 @@ export function FileReviewPanel() {
     try {
       const data = await fetchFileTree(path);
       setTree(data.entries);
+      setCurrentPath(data.path || path);
     } catch (e) {
       setError("Could not load files: " + (e as Error).message);
     }
@@ -61,6 +103,10 @@ export function FileReviewPanel() {
       ]);
       setContent(file.content ?? "");
       setDiff(diffRes.diff);
+      if (!showDiff && isResourcePath(path)) {
+        onRequestPreview?.(path);
+        onRequestImportSettings?.(path);
+      }
     } catch (e) {
       setError("Could not load file: " + (e as Error).message);
     } finally {
@@ -99,10 +145,14 @@ export function FileReviewPanel() {
   }, [content, autoSave]);
 
   const statusClass = (status: string) => {
-    if (status === "A" || status === "added") return "text-[var(--accent)] bg-[var(--accent-dim)]";
-    if (status === "M" || status === "modified") return "text-[var(--warning)] bg-[var(--warning-dim)]";
-    if (status === "D" || status === "deleted") return "text-[var(--danger)] bg-[var(--danger-dim)]";
-    if (status === "?" || status === "untracked") return "text-[var(--info)] bg-[var(--info-dim)]";
+    if (status === "A" || status === "added")
+      return "text-[var(--accent)] bg-[var(--accent-dim)]";
+    if (status === "M" || status === "modified")
+      return "text-[var(--warning)] bg-[var(--warning-dim)]";
+    if (status === "D" || status === "deleted")
+      return "text-[var(--danger)] bg-[var(--danger-dim)]";
+    if (status === "?" || status === "untracked")
+      return "text-[var(--info)] bg-[var(--info-dim)]";
     return "";
   };
 
@@ -114,20 +164,34 @@ export function FileReviewPanel() {
     return status;
   };
 
-  return (
-    <section className="card flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">
-          <FileText className="h-4 w-4" />
-          Code Review
-          <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[0.7rem]">{gitFiles.length}</span>
-        </div>
-      </div>
+  const navigateUp = useCallback(() => {
+    if (currentPath === "." || currentPath === "") return;
+    const parts = currentPath.replace(/\\/g, "/").split("/").filter(Boolean);
+    parts.pop();
+    const parent = parts.length === 0 ? "." : parts.join("/");
+    loadTree(parent);
+  }, [currentPath, loadTree]);
+
+  const breadcrumbs = useMemo(() => {
+    if (currentPath === "." || currentPath === "")
+      return [{ label: "Project", path: "." }];
+    const parts = currentPath.replace(/\\/g, "/").split("/").filter(Boolean);
+    return [
+      { label: "Project", path: "." },
+      ...parts.map((part, i) => ({
+        label: part,
+        path: parts.slice(0, i + 1).join("/"),
+      })),
+    ];
+  }, [currentPath]);
+
+  const fileReviewContent = (
+    <>
       <div className="flex gap-2 border-b border-[var(--border)] bg-[var(--surface)] p-3">
         <button
           type="button"
           onClick={() => setTab("git")}
-          className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
             tab === "git"
               ? "border-[rgba(34,197,94,0.4)] bg-[var(--accent-dim)] text-[var(--accent)]"
               : "border-[var(--border)] bg-[var(--bg)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
@@ -139,7 +203,7 @@ export function FileReviewPanel() {
         <button
           type="button"
           onClick={() => setTab("project")}
-          className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
             tab === "project"
               ? "border-[rgba(34,197,94,0.4)] bg-[var(--accent-dim)] text-[var(--accent)]"
               : "border-[var(--border)] bg-[var(--bg)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
@@ -152,10 +216,42 @@ export function FileReviewPanel() {
       <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-[var(--border)] lg:grid-cols-[280px_1fr] lg:divide-x lg:divide-y-0">
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] p-2">
-            <span className="flex-1 text-xs font-medium text-[var(--muted)]">{tab === "git" ? "Changed files" : "Project files"}</span>
+            {tab === "project" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={navigateUp}
+                  disabled={currentPath === "."}
+                  title="Go up"
+                  className="flex flex-shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-medium text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Up
+                </button>
+                <div className="flex flex-1 items-center gap-1 overflow-x-auto text-xs">
+                  {breadcrumbs.map((crumb, i) => (
+                    <button
+                      key={crumb.path}
+                      type="button"
+                      onClick={() => loadTree(crumb.path)}
+                      className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text)]"
+                    >
+                      {i === 0 ? <Home className="h-3 w-3" /> : crumb.label}
+                      {i < breadcrumbs.length - 1 && (
+                        <span className="text-[var(--border)]">/</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <span className="flex-1 text-xs font-medium text-[var(--muted)]">
+                Changed files
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => (tab === "git" ? loadGit() : loadTree("."))}
+              onClick={() => (tab === "git" ? loadGit() : loadTree(currentPath))}
               className="rounded-lg border border-[var(--border)] p-1.5 text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
             >
               <RefreshCw className="h-4 w-4" />
@@ -168,13 +264,19 @@ export function FileReviewPanel() {
                     key={f.path}
                     type="button"
                     onClick={() => openFile(f.path, true)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-mono transition-colors hover:bg-[var(--surface-2)] ${
-                      selectedPath === f.path ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text)]"
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-mono transition-colors hover:bg-[var(--surface-2)] ${
+                      selectedPath === f.path
+                        ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                        : "text-[var(--text)]"
                     }`}
                   >
                     <FileText className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="flex-1 truncate">{f.path}</span>
-                    <span className={`rounded px-1 py-0.5 text-[0.65rem] font-bold ${statusClass(f.worktreeStatus || f.indexStatus)}`}>
+                    <span
+                      className={`rounded px-1 py-0.5 text-[0.65rem] font-bold ${statusClass(
+                        f.worktreeStatus || f.indexStatus,
+                      )}`}
+                    >
                       {statusLabel(f.worktreeStatus || f.indexStatus)}
                     </span>
                   </button>
@@ -183,12 +285,22 @@ export function FileReviewPanel() {
                   <button
                     key={e.path}
                     type="button"
-                    onClick={() => (e.type === "directory" ? loadTree(e.path) : openFile(e.path, false))}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-mono transition-colors hover:bg-[var(--surface-2)] ${
-                      selectedPath === e.path ? "bg-[var(--accent-dim)] text-[var(--accent)]" : "text-[var(--text)]"
+                    onClick={() =>
+                      e.type === "directory"
+                        ? loadTree(e.path)
+                        : openFile(e.path, false)
+                    }
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-mono transition-colors hover:bg-[var(--surface-2)] ${
+                      selectedPath === e.path
+                        ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                        : "text-[var(--text)]"
                     }`}
                   >
-                    <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                    {e.type === "directory" ? (
+                      <Folder className="h-3.5 w-3.5 flex-shrink-0 text-[var(--warning)]" />
+                    ) : (
+                      <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                    )}
                     <span className="flex-1 truncate">{e.name}</span>
                   </button>
                 ))}
@@ -196,13 +308,23 @@ export function FileReviewPanel() {
         </div>
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] p-2">
-            <span className="flex-1 truncate font-mono text-xs text-[var(--text)]">{selectedPath ?? "-"}</span>
-            <label className="flex items-center gap-1.5 text-xs text-[var(--text)]">
-              <input type="checkbox" checked={editable} onChange={(e) => setEditable(e.target.checked)} />
+            <span className="flex-1 truncate font-mono text-xs text-[var(--text)]">
+              {selectedPath ?? "-"}
+            </span>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={editable}
+                onChange={(e) => setEditable(e.target.checked)}
+              />
               Edit
             </label>
-            <label className="flex items-center gap-1.5 text-xs text-[var(--text)]">
-              <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} />
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={autoSave}
+                onChange={(e) => setAutoSave(e.target.checked)}
+              />
               Auto-save
             </label>
             <button
@@ -216,14 +338,62 @@ export function FileReviewPanel() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {error && (
-              <div className="m-3 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-3 text-xs text-[var(--danger)]">{error}</div>
+              <div className="m-3 rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-3 text-xs text-[var(--danger)]">
+                {error}
+              </div>
             )}
-            {loading && !content && <div className="p-4 text-center text-sm text-[var(--muted)]">Loading...</div>}
+            {loading && !content && (
+              <div className="p-4 text-center text-sm text-[var(--muted)]">
+                Loading...
+              </div>
+            )}
             {!selectedPath && !loading && (
-              <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">Select a file to review.</div>
+              <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">
+                Select a file to review.
+              </div>
+            )}
+            {tab === "project" && selectedPath && (preview || importSettings) && (
+              <div className="border-b border-[var(--border)] bg-[var(--bg)] p-3">
+                {preview && (
+                  <div className="mb-2">
+                    {preview.ok && preview.previewUrl ? (
+                      <img
+                        src={preview.previewUrl}
+                        alt={preview.path}
+                        className="max-h-[200px] rounded-lg border border-[var(--border)] object-contain"
+                      />
+                    ) : preview.ok === false ? (
+                      <div className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-2 text-xs text-[var(--danger)]">
+                        Preview: {preview.error}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+                {importSettings?.ok && importSettings.settings && (
+                  <div className="space-y-2">
+                    <div className="text-[0.65rem] uppercase tracking-wide text-[var(--muted)]">Import Settings</div>
+                    {Object.entries(importSettings.settings).map(([section, kv]) => (
+                      <div key={section} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2">
+                        <div className="mb-1 text-xs font-semibold text-[var(--text)]">{section}</div>
+                        <div className="grid grid-cols-[1fr_1fr] gap-x-2 gap-y-1 text-xs">
+                          {Object.entries(kv).map(([k, v]) => (
+                            <div key={k} className="contents">
+                              <span className="truncate text-[var(--muted)]" title={k}>{k}</span>
+                              <span className="truncate font-mono text-[var(--text)]" title={v}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {selectedPath && diff && !editable ? (
-              <pre className="p-3 font-mono text-xs leading-relaxed">
+              <pre
+                className="p-3 font-mono text-xs leading-relaxed"
+                style={{ fontSize: `${fontSize}px` }}
+              >
                 {diff.split("\n").map((line, i) => {
                   let color = "";
                   if (line.startsWith("+")) color = "text-green-400";
@@ -243,6 +413,7 @@ export function FileReviewPanel() {
                 content={content}
                 editable={editable}
                 onChange={setContent}
+                fontSize={fontSize}
               />
             ) : null}
           </div>
@@ -252,21 +423,67 @@ export function FileReviewPanel() {
                 type="button"
                 onClick={() => handleGitAction("stage")}
                 className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:border-[var(--accent)]"
-              >Stage</button>
+              >
+                Stage
+              </button>
               <button
                 type="button"
                 onClick={() => handleGitAction("unstage")}
                 className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:border-[var(--warning)]"
-              >Unstage</button>
+              >
+                Unstage
+              </button>
               <button
                 type="button"
                 onClick={() => handleGitAction("reset")}
                 className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--danger)] hover:border-[var(--danger)]"
-              >Reset</button>
+              >
+                Reset
+              </button>
             </div>
           )}
         </div>
       </div>
-    </section>
+    </>
+  );
+
+  return (
+    <>
+      <section className="card flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">
+            <FileText className="h-4 w-4" />
+            Code Review
+            <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[0.7rem]">
+              {gitFiles.length}
+            </span>
+          </div>
+          <PanelHeaderActions
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((v) => !v)}
+            onFullscreen={() => startTransition(() => setFullscreen(true))}
+          />
+        </div>
+        <div
+          className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-in-out ${
+            collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+          }`}
+        >
+          <div className="flex min-h-0 flex-col overflow-hidden">{fileReviewContent}</div>
+        </div>
+      </section>
+      {fullscreen && (
+        <ViewTransition enter="scale-in" exit="scale-out" default="none">
+          <FullscreenOverlay
+            title="Code Review"
+            onClose={() => setFullscreen(false)}
+          >
+            <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              {fileReviewContent}
+            </section>
+          </FullscreenOverlay>
+        </ViewTransition>
+      )}
+    </>
   );
 }

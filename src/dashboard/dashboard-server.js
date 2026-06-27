@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { buildHandshakeResponse, decodeFrames, encodeTextFrame } from "../host/websocket-codec.js";
+import { buildHandshakeResponse, decodeFrames, encodeCloseFrame, encodeTextFrame } from "../host/websocket-codec.js";
 import { ArtifactStore } from "../core/artifact-store.js";
 import { readTrace, resolveTraceId } from "../core/trace-reader.js";
 import { buildCurrentContext } from "../core/context-builder.js";
@@ -267,6 +267,9 @@ export class DashboardServer {
         pending = Buffer.from(decoded.remaining);
         for (const message of decoded.messages) {
           if (message === null) {
+            try {
+              socket.write(encodeCloseFrame());
+            } catch {}
             socket.end();
             return;
           }

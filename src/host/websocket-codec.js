@@ -22,10 +22,17 @@ export function buildHandshakeResponse(requestText) {
   ].join("\r\n");
 }
 
-export function encodeTextFrame(text, { masked = false } = {}) {
-  const payload = Buffer.from(text, "utf8");
+export function encodeCloseFrame(code = 1000, reason = "") {
+  const reasonBytes = Buffer.from(reason, "utf8");
+  const frame = Buffer.allocUnsafe(2 + reasonBytes.length);
+  frame.writeUInt16BE(code, 0);
+  reasonBytes.copy(frame, 2);
+  return encodeFrame(0x88, frame);
+}
+
+function encodeFrame(opcode, payload, { masked = false } = {}) {
   const header = [];
-  header.push(0x81);
+  header.push(opcode);
 
   if (payload.length < 126) {
     header.push((masked ? 0x80 : 0) | payload.length);
@@ -50,6 +57,10 @@ export function encodeTextFrame(text, { masked = false } = {}) {
   }
 
   return Buffer.concat([Buffer.from(header), mask, maskedPayload]);
+}
+
+export function encodeTextFrame(text, { masked = false } = {}) {
+  return encodeFrame(0x81, Buffer.from(text, "utf8"), { masked });
 }
 
 export function decodeFrames(buffer) {

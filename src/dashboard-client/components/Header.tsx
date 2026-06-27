@@ -1,4 +1,4 @@
-import { Layers } from "lucide-react";
+import { Layers, Settings } from "lucide-react";
 
 interface HeaderProps {
   connected: boolean;
@@ -8,6 +8,7 @@ interface HeaderProps {
   traceActive: boolean;
   paused: boolean;
   onReconnect: () => void;
+  onOpenSettings: () => void;
 }
 
 export function Header({
@@ -18,6 +19,7 @@ export function Header({
   traceActive,
   paused,
   onReconnect,
+  onOpenSettings,
 }: HeaderProps) {
   const connectionText = connected
     ? mode === "fallback"
@@ -32,17 +34,20 @@ export function Header({
     : "No trace";
 
   return (
-    <header className="sticky top-0 z-50 flex min-h-[var(--header-h)] items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(15,23,42,0.96)] px-4 py-2 backdrop-blur">
-      <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+    <header
+      className="sticky top-0 z-50 flex h-[var(--header-h)] flex-nowrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(15,23,42,0.96)] px-4 py-2 backdrop-blur"
+      style={{ viewTransitionName: "persistent-header" }}
+    >
+      <div className="flex flex-shrink-0 items-center gap-2 text-sm font-semibold tracking-tight">
         <Layers className="h-5 w-5 text-[var(--accent)]" />
         <span className="hidden sm:inline">Game Agent Harness</span>
         <span className="sm:hidden">Harness</span>
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="flex flex-nowrap items-center justify-end gap-1.5 overflow-hidden">
         <button
           type="button"
           onClick={onReconnect}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-semibold ${
+          className={`inline-flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-semibold ${
             connected
               ? "border-[rgba(34,197,94,0.3)] bg-[var(--accent-dim)] text-[var(--accent)]"
               : "border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] text-[var(--danger)]"
@@ -62,8 +67,16 @@ export function Header({
         >
           {traceText}
         </span>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="inline-flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[0.7rem] font-semibold text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Settings</span>
+        </button>
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-semibold ${
+          className={`inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-semibold ${
             engineConnected
               ? "border-[rgba(34,197,94,0.3)] bg-[var(--accent-dim)] text-[var(--accent)]"
               : "border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] text-[var(--danger)]"

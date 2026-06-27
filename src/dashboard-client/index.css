@@ -18,7 +18,67 @@
   --radius: 12px;
   --radius-sm: 8px;
   --header-h: 56px;
+  --tabs-h: 56px;
   --toolbar-h: 56px;
+
+  --duration-exit: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 350ms;
+}
+
+@keyframes fade {
+  from { filter: blur(3px); opacity: 0; }
+  to { filter: blur(0); opacity: 1; }
+}
+
+@keyframes scale-down {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(0.96); opacity: 0; }
+}
+
+@keyframes scale-up {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+::view-transition-old(.fade-out) {
+  animation: var(--duration-exit) ease-in fade reverse;
+}
+::view-transition-new(.fade-in) {
+  animation: var(--duration-enter) ease-out var(--duration-exit) both fade;
+}
+
+::view-transition-old(.scale-out) {
+  animation: var(--duration-exit) ease-in scale-down;
+}
+::view-transition-new(.scale-in) {
+  animation: var(--duration-enter) ease-out var(--duration-exit) both scale-up;
+}
+
+::view-transition-group(persistent-header),
+::view-transition-group(persistent-tabs),
+::view-transition-group(persistent-toolbar) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(persistent-header),
+::view-transition-old(persistent-tabs),
+::view-transition-old(persistent-toolbar) {
+  display: none;
+}
+::view-transition-new(persistent-header),
+::view-transition-new(persistent-tabs),
+::view-transition-new(persistent-toolbar) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
 }
 
 * {

@@ -38,7 +38,10 @@ export function TransportToolbar({
   const recording = captureEnabled && runtimeRunning;
 
   return (
-    <nav className="fixed bottom-3 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-full border border-[var(--border)] bg-[rgba(15,23,42,0.96)] p-1.5 shadow-lg backdrop-blur">
+    <nav
+      className="fixed bottom-[calc(var(--tabs-h)+12px)] left-1/2 z-50 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[var(--border)] bg-[rgba(15,23,42,0.96)] p-1.5 shadow-lg backdrop-blur lg:bottom-3"
+      style={{ viewTransitionName: "persistent-toolbar" }}
+    >
       <ToolbarButton
         onClick={onRecord}
         disabled={!runtimeRunning}
@@ -110,7 +113,7 @@ function ToolbarButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-full border px-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+      className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1.5 rounded-full border px-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
         active
           ? danger
             ? "border-[rgba(239,68,68,0.4)] bg-[var(--danger-dim)] text-[var(--danger)] shadow-[0_0_12px_rgba(239,68,68,0.25)]"

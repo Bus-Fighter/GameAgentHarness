@@ -17,8 +17,10 @@ var project_name := ""
 var project_root := ""
 var _reconnect_timer := 0.0
 var _should_reconnect := true
+var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 
 func _ready() -> void:
+	_log_info("client _ready, url=%s" % url)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	project_root = ProjectSettings.globalize_path("res://")
 	project_name = _detect_project_name()
@@ -51,7 +53,7 @@ func connect_to_host() -> void:
 	socket.set_outbound_buffer_size(WEBSOCKET_OUTBOUND_BUFFER_SIZE)
 	var err := socket.connect_to_url(url)
 	if err != OK:
-		push_warning("[GameAgentHarness] Could not connect to %s, err=%s" % [url, err])
+		_log_warning("Could not connect to %s, err=%s" % [url, err])
 
 func stop_reconnecting() -> void:
 	_should_reconnect = false
@@ -148,18 +150,22 @@ func _handle_host_message(message: Variant) -> void:
 		return
 	var kind := str(message.get("kind", ""))
 	if kind == "host.error":
-		push_warning("[GameAgentHarness] host error: %s" % str(message.get("error", "")))
+		_log_warning("host error: %s" % str(message.get("error", "")))
 	elif kind == "control":
 		_handle_control_message(message)
 
 func _handle_control_message(message: Dictionary) -> void:
 	var action := str(message.get("action", ""))
+	_log_debug("client received control: %s" % action)
 	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
-	elif action == "snapshot" or action == "pause" or action == "input.pointer" or action == "play" or action == "stop":
-		var parent := get_parent()
-		if parent != null and parent.has_method("_on_harness_control"):
-			parent._on_harness_control(message)
+	# Let the parent plugin/runtime handle everything else (play, stop, snapshot, etc.)
+	var parent := get_parent()
+	if parent != null and parent.has_method("_on_harness_control"):
+		_log_debug("forwarding control to parent: %s" % parent.name)
+		parent._on_harness_control(message)
+	else:
+		_log_debug("no parent handler for control: %s" % action)
 
 func _set_capture_enabled(key: String, enabled: bool) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/" + key):
@@ -168,7 +174,7 @@ func _set_capture_enabled(key: String, enabled: bool) -> void:
 	ProjectSettings.save()
 	var event_type := key.replace("_enabled", ".changed")
 	send_event(event_type, { "enabled": enabled })
-	push_warning("[GameAgentHarness] %s %s from dashboard" % [key.replace("_enabled", "").capitalize(), "enabled" if enabled else "disabled"])
+	_log_warning("%s %s from dashboard" % [key.replace("_enabled", "").capitalize(), "enabled" if enabled else "disabled"])
 
 func _flush_queue() -> void:
 	while queue.size() > 0 and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -180,6 +186,44 @@ func _detect_project_name() -> String:
 		return configured
 	var parts := project_root.trim_suffix("/").split("/")
 	return parts[parts.size() - 1] if parts.size() > 0 else "GodotProject"
+
+func _current_log_level() -> String:
+	var level := str(ProjectSettings.get_setting("game_agent_harness/log_level", "info"))
+	if not _LOG_LEVELS.has(level):
+		return "info"
+	return level
+
+func _should_log(level: String) -> bool:
+	var current := _current_log_level()
+	if current == "off":
+		return false
+	if not _LOG_LEVELS.has(level):
+		return true
+	return _LOG_LEVELS[level] >= _LOG_LEVELS[current]
+
+func _log(level: String, message: String) -> void:
+	if not _should_log(level):
+		return
+	var prefix := "[GameAgentHarness] %s" % message
+	match level:
+		"error":
+			push_error(prefix)
+		"warning":
+			push_warning(prefix)
+		_:
+			print(prefix)
+
+func _log_debug(message: String) -> void:
+	_log("debug", message)
+
+func _log_info(message: String) -> void:
+	_log("info", message)
+
+func _log_warning(message: String) -> void:
+	_log("warning", message)
+
+func _log_error(message: String) -> void:
+	_log("error", message)
 
 static func node_entity(node: Node) -> Dictionary:
 	if node == null:

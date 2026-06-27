@@ -43,6 +43,13 @@ export interface HarnessEvent {
   data?: Record<string, unknown>;
 }
 
+export interface HarnessLog {
+  seq: number;
+  level: "verbose" | "info" | "warning" | "error";
+  message: string;
+  receivedAt: string;
+}
+
 export interface HarnessContext {
   scene?: string;
   runtime?: { running?: boolean };
@@ -54,6 +61,62 @@ export interface HarnessContext {
     project?: { name?: string };
     engine?: { name?: string };
   };
+}
+
+export interface HarnessNode {
+  id: string;
+  kind: string;
+  name: string;
+  type: string;
+  path: string;
+}
+
+export interface HarnessSceneNode extends HarnessNode {
+  hasChildren: boolean;
+  children?: HarnessSceneNode[];
+}
+
+export interface HarnessProperty {
+  name: string;
+  type: string;
+  value: unknown;
+  group?: string;
+}
+
+export interface HarnessSignal {
+  name: string;
+  args: string[];
+  connectionCount: number;
+}
+
+export interface HarnessInspectorData {
+  node: HarnessNode;
+  properties: HarnessProperty[];
+  signals: HarnessSignal[];
+}
+
+export interface HarnessHistoryAction {
+  seq: number;
+  source: string;
+  action: string;
+  data?: Record<string, unknown>;
+  receivedAt: string;
+}
+
+export interface ResourcePreview {
+  path: string;
+  ok: boolean;
+  previewUrl?: string;
+  width?: number;
+  height?: number;
+  error?: string;
+}
+
+export interface ResourceImportSettings {
+  path: string;
+  ok: boolean;
+  settings?: Record<string, Record<string, string>>;
+  error?: string;
 }
 
 export interface StatusResponse {

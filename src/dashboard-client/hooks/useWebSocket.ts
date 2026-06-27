@@ -28,6 +28,11 @@ export function useWebSocket(
     onMessageRef.current = onMessage;
   }, [onMessage]);
 
+  const modeRef = useRef<Mode>(null);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
   const cleanup = useCallback(() => {
     if (connectTimerRef.current) {
       clearTimeout(connectTimerRef.current);
@@ -38,10 +43,17 @@ export function useWebSocket(
       pingTimerRef.current = null;
     }
     if (wsRef.current) {
-      try {
-        wsRef.current.close();
-      } catch {}
+      const ws = wsRef.current;
       wsRef.current = null;
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => ws.close();
+          ws.onerror = null;
+          ws.onclose = null;
+        }
+      } catch {}
     }
     if (esRef.current) {
       try {
@@ -147,7 +159,7 @@ export function useWebSocket(
         reconnectDelayRef.current * 1.5,
         30000,
       );
-      if (mode !== "fallback") {
+      if (modeRef.current !== "fallback") {
         setTimeout(connect, reconnectDelayRef.current);
       }
     };
@@ -157,7 +169,7 @@ export function useWebSocket(
       setError("WebSocket error. Falling back to HTTP polling.");
       startSseFallback();
     };
-  }, [cleanup, startSseFallback, mode]);
+  }, [cleanup, startSseFallback]);
 
   useEffect(() => {
     connect();

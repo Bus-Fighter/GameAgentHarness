@@ -6,13 +6,14 @@ var client: GameAgentHarnessClient
 var last_scene_path := ""
 var sample_timer := 0.0
 var sample_interval := 1.0
-var frame_interval := 0.2
 var frame_timer := 0.0
 var last_frame_persisted := false
 var _paused := false
+var _frame_interval := 0.2
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_frame_interval = float(ProjectSettings.get_setting("game_agent_harness/runtime_viewport_interval", 0.2))
 	client = ClientScript.new()
 	client.name = "GameAgentHarnessRuntimeClient"
 	add_child(client)
@@ -40,7 +41,7 @@ func _process(delta: float) -> void:
 		_send_viewport_frame(true)
 
 	frame_timer += delta
-	if frame_timer >= frame_interval:
+	if frame_timer >= _frame_interval:
 		frame_timer = 0.0
 		_send_viewport_frame(false)
 

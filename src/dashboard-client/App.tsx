@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, startTransition } from "react";
 import { Header } from "./components/Header";
 import { MobileTabs } from "./components/MobileTabs";
+import { TabPanel } from "./components/TabPanel";
 import { ViewportPanel } from "./components/ViewportPanel";
 import { SceneCard } from "./components/SceneCard";
 import { EventsPanel } from "./components/EventsPanel";
@@ -8,14 +9,23 @@ import { EvidencePanel } from "./components/EvidencePanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { TransportToolbar } from "./components/TransportToolbar";
 import { FileReviewPanel } from "./components/FileReviewPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { InspectPanel } from "./components/InspectPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useSettings } from "./hooks/useSettings";
 import { fetchStatus } from "./api";
 import type {
   WebSocketMessage,
   HarnessEvent,
+  HarnessLog,
   HarnessContext,
   FrameMessage,
   StatusResponse,
+  HarnessInspectorData,
+  HarnessHistoryAction,
+  HarnessSceneNode,
+  ResourcePreview,
+  ResourceImportSettings,
 } from "./types";
 
 interface EvidenceItem {
@@ -31,14 +41,54 @@ export default function App() {
   const [traceId, setTraceId] = useState<string | null>(null);
   const [context, setContext] = useState<HarnessContext | null>(null);
   const [events, setEvents] = useState<HarnessEvent[]>([]);
+  const [logs, setLogs] = useState<HarnessLog[]>([]);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
-  const [frame, setFrame] = useState<FrameMessage | null>(null);
+  const [runtimeFrame, setRuntimeFrame] = useState<FrameMessage | null>(null);
+  const [editorFrame, setEditorFrame] = useState<FrameMessage | null>(null);
+  const [viewportSource, setViewportSource] = useState<"runtime" | "editor">("runtime");
   const [paused, setPaused] = useState(false);
   const [recordingPreference, setRecordingPreference] = useState(true);
   const [runtimeCaptureEnabled, setRuntimeCaptureEnabled] = useState(true);
   const [runtimeRunning, setRuntimeRunning] = useState(false);
+  const [inspector, setInspector] = useState<HarnessInspectorData | null>(null);
+  const [history, setHistory] = useState<HarnessHistoryAction[]>([]);
+  const [sceneTree, setSceneTree] = useState<HarnessSceneNode | null>(null);
+  const [selectedNodePath, setSelectedNodePath] = useState<string | null>(null);
+  const [resourcePreview, setResourcePreview] = useState<ResourcePreview | null>(null);
+  const [resourceImportSettings, setResourceImportSettings] = useState<ResourceImportSettings | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const {
+    settings,
+    setFontSize,
+    setLogsEnabled,
+    setLogLevel,
+    setMaxLogLines,
+    setEditorViewportEnabled,
+    setEditorViewportInterval,
+    setRuntimeViewportInterval,
+    setInspectorEnabled,
+    setSignalsEnabled,
+    setHistoryEnabled,
+    setMaxHistoryEntries,
+  } = useSettings();
 
   const lastSeqRef = useRef(0);
+  const maxLogLinesRef = useRef(settings.maxLogLines);
+  const maxHistoryEntriesRef = useRef(settings.maxHistoryEntries);
+  const pendingSelectionPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    maxLogLinesRef.current = settings.maxLogLines;
+  }, [settings.maxLogLines]);
+  useEffect(() => {
+    maxHistoryEntriesRef.current = settings.maxHistoryEntries;
+  }, [settings.maxHistoryEntries]);
+
+  const handleTabChange = useCallback((tab: string) => {
+    startTransition(() => {
+      setActiveTab(tab);
+    });
+  }, []);
 
   const handleEvent = useCallback(
     (event: HarnessEvent) => {
@@ -49,6 +99,9 @@ export default function App() {
       });
       if (event.seq > lastSeqRef.current) lastSeqRef.current = event.seq;
 
+      if (event.type === "engine.connected" || event.type === "plugin.enabled") {
+        sendControl("scene.tree");
+      }
       if (event.type?.startsWith("evidence.") && event.data?.path && traceId) {
         setEvidence((prev) => {
           const next = [
@@ -61,6 +114,23 @@ export default function App() {
             },
           ];
           return next.slice(-50);
+        });
+      }
+      if (event.type === "engine.log") {
+        const level = String(event.data?.level || "info");
+        const message = String(event.data?.message || "");
+        if (!message) return;
+        setLogs((prev) => {
+          const next = [
+            ...prev,
+            {
+              seq: event.seq,
+              level: level as HarnessLog["level"],
+              message,
+              receivedAt: event.receivedAt,
+            },
+          ];
+          return next.slice(-maxLogLinesRef.current);
         });
       }
       if (event.type === "state.sampled") {
@@ -84,6 +154,55 @@ export default function App() {
         setRuntimeRunning(false);
         setRuntimeCaptureEnabled(false);
       }
+      if (event.type === "inspector.data") {
+        const data = event.data as HarnessInspectorData | undefined;
+        if (data?.node) setInspector(data);
+      }
+      if (event.type === "scene.tree") {
+        const root = (event.data?.root ?? null) as HarnessSceneNode | null;
+        setSceneTree(root);
+      }
+      if (event.type === "selection.changed") {
+        const data = event.data as Record<string, unknown> | undefined;
+        const selected = (data?.selected as HarnessNode[] | undefined) ?? [];
+        const source = String(data?.source ?? "editor");
+        if (selected.length > 0) {
+          setSelectedNodePath(selected[0].path);
+          if (source === "sync") {
+            pendingSelectionPathRef.current = null;
+          }
+        }
+      }
+      if (event.type === "resource.preview") {
+        const data = event.data as ResourcePreview | undefined;
+        if (data) {
+          setResourcePreview({
+            ...data,
+            previewUrl: data.ok && data.data ? `data:image/jpeg;base64,${data.data}` : undefined,
+          });
+        }
+      }
+      if (event.type === "resource.import_settings") {
+        const data = event.data as ResourceImportSettings | undefined;
+        if (data) setResourceImportSettings(data);
+      }
+      if (event.type === "history.action") {
+        const data = event.data as Record<string, unknown> | undefined;
+        if (!data) return;
+        setHistory((prev) => {
+          const next = [
+            ...prev,
+            {
+              seq: event.seq,
+              source: String(data.source || "engine"),
+              action: String(data.action || event.type),
+              data: (data.data as Record<string, unknown>) || {},
+              receivedAt: event.receivedAt,
+            },
+          ];
+          return next.slice(-maxHistoryEntriesRef.current);
+        });
+      }
     },
     [traceId, runtimeRunning, recordingPreference],
   );
@@ -105,9 +224,13 @@ export default function App() {
             lastSeqRef.current = 0;
           }
           break;
-        case "frame":
-          setFrame(msg);
-          break;
+      case "frame":
+        if (msg.source === "editor") {
+          setEditorFrame(msg);
+        } else {
+          setRuntimeFrame(msg);
+        }
+        break;
         case "context":
           setContext(msg.context);
           if (msg.context.runtime?.running != null) {
@@ -124,6 +247,13 @@ export default function App() {
 
   const { connected, mode, error, reconnect, send } = useWebSocket(handleMessage);
 
+  const sendControl = useCallback(
+    (action: string, extra: Record<string, unknown> = {}) => {
+      send({ kind: "control", action, ...extra });
+    },
+    [send],
+  );
+
   useEffect(() => {
     const id = setInterval(() => {
       fetchStatus().then(setStatus).catch(console.error);
@@ -132,18 +262,44 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      if (runtimeCaptureEnabled) setFrame((f) => (f ? { ...f } : null));
-    }, 2000);
-    return () => clearInterval(id);
-  }, [runtimeCaptureEnabled]);
+    sendControl("runtime_viewport_interval", { interval: settings.runtimeViewportInterval });
+  }, [settings.runtimeViewportInterval, sendControl]);
 
-  const sendControl = useCallback(
-    (action: string, extra: Record<string, unknown> = {}) => {
-      send({ kind: "control", action, ...extra });
-    },
-    [send],
-  );
+  useEffect(() => {
+    sendControl("editor_viewport", { enabled: settings.editorViewportEnabled, interval: settings.editorViewportInterval });
+  }, [settings.editorViewportEnabled, settings.editorViewportInterval, sendControl]);
+
+  useEffect(() => {
+    sendControl("inspector_config", {
+      inspector_enabled: settings.inspectorEnabled,
+      signals_enabled: settings.signalsEnabled,
+      history_enabled: settings.historyEnabled,
+    });
+  }, [settings.inspectorEnabled, settings.signalsEnabled, settings.historyEnabled, sendControl]);
+
+  useEffect(() => {
+    if (!connected) return;
+    const level = (() => {
+      switch (settings.logLevel) {
+        case "all":
+        case "verbose":
+          return "debug";
+        case "warning":
+          return "warning";
+        case "error":
+          return "error";
+        case "info":
+        default:
+          return "info";
+      }
+    })();
+    sendControl("log.level", { level });
+  }, [connected, settings.logLevel, sendControl]);
+
+  useEffect(() => {
+    if (!connected) return;
+    sendControl("scene.tree");
+  }, [connected, sendControl]);
 
   const engineConnected = (status?.engineClients ?? 0) > 0;
 
@@ -207,12 +363,50 @@ export default function App() {
     sendControl("stop");
   }, [sendControl]);
 
+  const handleClearLogs = useCallback(() => {
+    setLogs([]);
+  }, []);
+
   const handleClearEvidence = useCallback(() => {
     setEvidence([]);
   }, []);
 
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
+
+  const handleNodeSelect = useCallback(
+    (path: string) => {
+      pendingSelectionPathRef.current = path;
+      setSelectedNodePath(path);
+      sendControl("selection.set", { path });
+      sendControl("inspector.query", { path });
+    },
+    [sendControl],
+  );
+
+  const handleRefreshSceneTree = useCallback(() => {
+    sendControl("scene.tree");
+  }, [sendControl]);
+
+  const handleRequestResourcePreview = useCallback(
+    (path: string) => {
+      setResourcePreview(null);
+      sendControl("resource.preview", { path });
+    },
+    [sendControl],
+  );
+
+  const handleRequestResourceImportSettings = useCallback(
+    (path: string) => {
+      setResourceImportSettings(null);
+      sendControl("resource.import_settings", { path });
+    },
+    [sendControl],
+  );
+
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden lg:min-h-dvh lg:overflow-auto">
       <Header
         connected={connected}
         mode={mode}
@@ -221,20 +415,70 @@ export default function App() {
         traceActive={status?.traceActive ?? false}
         paused={paused}
         onReconnect={reconnect}
+        onOpenSettings={() => startTransition(() => setSettingsOpen(true))}
       />
-      <MobileTabs activeTab={activeTab} onChange={setActiveTab} />
-      <main className="flex-1 gap-3 p-3 pb-[calc(var(--toolbar-h)+20px)] lg:grid lg:grid-cols-[1.4fr_1fr] lg:grid-rows-[auto_1fr_auto] lg:items-start lg:gap-4 lg:p-4 lg:pb-[calc(var(--toolbar-h)+24px)]">
-        {activeTab === "live" && (
-          <>
-            <ViewportPanel captureEnabled={runtimeCaptureEnabled} frame={frame} onPointer={handlePointer} />
-            <SceneCard context={context} />
-            <DiagnosticsPanel status={status} mode={mode} />
-          </>
+      {activeTab === "live" && (
+          <TabPanel>
+            <div className="flex h-full flex-col gap-3 overflow-y-auto lg:contents">
+              <ViewportPanel
+                captureEnabled={viewportSource === "runtime" ? runtimeCaptureEnabled : settings.editorViewportEnabled}
+                frame={viewportSource === "runtime" ? runtimeFrame : editorFrame}
+                source={viewportSource}
+                onSourceChange={setViewportSource}
+                onPointer={handlePointer}
+              />
+              <SceneCard context={context} />
+              <DiagnosticsPanel status={status} mode={mode} />
+            </div>
+          </TabPanel>
         )}
-        {activeTab === "events" && <EventsPanel events={events} />}
-        {activeTab === "evidence" && <EvidencePanel evidence={evidence} />}
-        {activeTab === "files" && <FileReviewPanel />}
-      </main>
+        {activeTab === "events" && (
+          <TabPanel>
+            <EventsPanel
+              events={events}
+              logs={logs}
+              fontSize={settings.fontSize}
+              logsEnabled={settings.logsEnabled}
+              logLevel={settings.logLevel}
+              onLogLevelChange={setLogLevel}
+              onClearLogs={handleClearLogs}
+            />
+          </TabPanel>
+        )}
+        {activeTab === "evidence" && (
+          <TabPanel>
+            <EvidencePanel evidence={evidence} />
+          </TabPanel>
+        )}
+      {activeTab === "files" && (
+        <TabPanel>
+          <FileReviewPanel
+            fontSize={settings.fontSize}
+            preview={resourcePreview}
+            importSettings={resourceImportSettings}
+            onRequestPreview={handleRequestResourcePreview}
+            onRequestImportSettings={handleRequestResourceImportSettings}
+          />
+        </TabPanel>
+      )}
+      {activeTab === "inspect" && (
+        <TabPanel>
+          <InspectPanel
+            inspector={inspector}
+            history={history}
+            sceneTree={sceneTree}
+            selectedNodePath={selectedNodePath}
+            fontSize={settings.fontSize}
+            inspectorEnabled={settings.inspectorEnabled}
+            signalsEnabled={settings.signalsEnabled}
+            historyEnabled={settings.historyEnabled}
+            onClearHistory={handleClearHistory}
+            onNodeSelect={handleNodeSelect}
+            onRefreshSceneTree={handleRefreshSceneTree}
+          />
+        </TabPanel>
+      )}
+      <MobileTabs activeTab={activeTab} onChange={handleTabChange} />
       <TransportToolbar
         runtimeRunning={runtimeRunning}
         engineConnected={engineConnected}
@@ -249,10 +493,26 @@ export default function App() {
         onClearEvidence={handleClearEvidence}
       />
       {error && (
-        <div className="fixed bottom-[calc(var(--toolbar-h)+24px)] left-4 right-4 z-[100] rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-3 text-center text-sm text-[var(--danger)]">
+        <div className="fixed bottom-[calc(var(--tabs-h)+var(--toolbar-h)+28px)] left-4 right-4 z-[100] rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-3 text-center text-sm text-[var(--danger)] lg:bottom-[calc(var(--toolbar-h)+24px)]">
           {error}
         </div>
       )}
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => startTransition(() => setSettingsOpen(false))}
+        settings={settings}
+        onFontSizeChange={setFontSize}
+        onLogsEnabledChange={setLogsEnabled}
+        onLogLevelChange={setLogLevel}
+        onMaxLogLinesChange={setMaxLogLines}
+        onEditorViewportEnabledChange={setEditorViewportEnabled}
+        onEditorViewportIntervalChange={setEditorViewportInterval}
+        onRuntimeViewportIntervalChange={setRuntimeViewportInterval}
+        onInspectorEnabledChange={setInspectorEnabled}
+        onSignalsEnabledChange={setSignalsEnabled}
+        onHistoryEnabledChange={setHistoryEnabled}
+        onMaxHistoryEntriesChange={setMaxHistoryEntries}
+      />
     </div>
   );
 }
