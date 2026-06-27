@@ -233,8 +233,8 @@ func _node_matches_subscription(node: Node, match_rules: Dictionary) -> bool:
 	if match_rules.is_empty():
 		return false
 	if match_rules.has("nodeClass"):
-		var class_name := str(match_rules.get("nodeClass", ""))
-		if node.get_class() != class_name and not node.is_class(class_name):
+		var node_class_name := str(match_rules.get("nodeClass", ""))
+		if node.get_class() != node_class_name and not node.is_class(node_class_name):
 			return false
 	if match_rules.has("nodeName"):
 		if node.name != str(match_rules.get("nodeName", "")):

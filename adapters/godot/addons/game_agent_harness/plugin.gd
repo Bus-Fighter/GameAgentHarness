@@ -13,7 +13,8 @@ var _runtime_running := false
 var _log_file: FileAccess = null
 var _log_file_path := ""
 var _log_poll_timer := 0.0
-var _log_poll_interval := 0.2
+var _log_poll_interval := 1.0
+var _last_log_length := 0
 var _editor_viewport_enabled := false
 var _editor_viewport_interval := 0.2
 var _editor_viewport_timer := 0.0
@@ -23,6 +24,9 @@ var _history_enabled := true
 var _selection_from_dashboard := false
 var _preview_requests: Dictionary = {}
 var _log_level := "info"
+var _scene_tree_cache: Dictionary = {}
+var _scene_tree_cache_at := 0.0
+var _SCENE_TREE_CACHE_TTL := 1.0
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 
 func _enter_tree() -> void:
@@ -42,6 +46,8 @@ func _enter_tree() -> void:
 	editor_selection = get_editor_interface().get_selection()
 	if editor_selection != null:
 		editor_selection.selection_changed.connect(_on_selection_changed)
+
+	scene_changed.connect(_on_scene_changed)
 
 	dashboard_panel = DashboardPanelScript.new()
 	dashboard_panel.name = "GameAgentHarnessDashboard"
@@ -70,6 +76,7 @@ func _process(delta: float) -> void:
 
 	var playing := get_editor_interface().is_playing_scene()
 	if playing == _runtime_running:
+		_update_dashboard_status()
 		return
 	_runtime_running = playing
 	if playing:
@@ -82,6 +89,7 @@ func _process(delta: float) -> void:
 	else:
 		client.send_event("runtime.stopped", {})
 		_send_history("engine", "runtime.stopped", {})
+	_update_dashboard_status()
 
 func _exit_tree() -> void:
 	remove_tool_menu_item("Start Game Agent Harness")
@@ -178,6 +186,12 @@ func _on_harness_control(message: Dictionary) -> void:
 		_send_history("dashboard", "inspector_config", { "inspector_enabled": _inspector_enabled, "signals_enabled": _signals_enabled, "history_enabled": _history_enabled })
 	elif action == "log.level":
 		_set_log_level(str(message.get("level", _log_level)))
+	elif action == "scene.open":
+		var open_path := str(message.get("path", ""))
+		if not open_path.is_empty():
+			var res_path := open_path if open_path.begins_with("res://") else "res://" + open_path.replace("\\", "/")
+			get_editor_interface().open_scene_from_path(res_path)
+			_send_history("dashboard", "scene.open", { "path": open_path })
 	elif action == "scene.tree":
 		_send_scene_tree()
 	elif action == "inspector.query":
@@ -228,11 +242,30 @@ func _on_selection_changed() -> void:
 		var primary_node = nodes[0]
 		client.send_event("inspector.data", _build_inspector_data(primary_node), GameAgentHarnessClient.node_entity(primary_node))
 
+func _on_scene_changed(root: Node) -> void:
+	var scene_path := ""
+	if root != null:
+		scene_path = root.scene_file_path
+	client.send_event("scene.changed", { "scenePath": scene_path })
+	_emit_editor_context()
+
+func _update_dashboard_status() -> void:
+	if dashboard_panel == null:
+		return
+	if dashboard_panel.is_harness_running():
+		return
+	if client != null and client.connected:
+		dashboard_panel.set_status_text("Status: connected to harness")
+	else:
+		dashboard_panel.set_status_text("Status: disconnected")
+
 func _emit_editor_context() -> void:
 	var edited_scene_root := get_editor_interface().get_edited_scene_root()
 	var entity := GameAgentHarnessClient.node_entity(edited_scene_root)
+	var scene_path := edited_scene_root.scene_file_path if edited_scene_root != null else ""
 	client.send_event("editor.context", {
-		"editedSceneRoot": entity
+		"editedSceneRoot": entity,
+		"scenePath": scene_path
 	}, entity)
 
 func _enable_file_logging() -> void:
@@ -260,6 +293,7 @@ func _open_log_file() -> void:
 	_log_file = FileAccess.open(_log_file_path, FileAccess.READ)
 	if _log_file != null:
 		_log_file.seek_end()
+		_last_log_length = _log_file.get_length()
 
 func _tail_log_file() -> void:
 	if _log_file == null:
@@ -270,7 +304,11 @@ func _tail_log_file() -> void:
 		_log_file = null
 		_open_log_file()
 		return
-	while _log_file.get_position() < _log_file.get_length():
+	var current_length := _log_file.get_length()
+	if current_length == _last_log_length:
+		return
+	_last_log_length = current_length
+	while _log_file.get_position() < current_length:
 		var line := _log_file.get_line()
 		if line.is_empty():
 			continue
@@ -395,9 +433,15 @@ func _send_scene_tree() -> void:
 	if root == null:
 		client.send_event("scene.tree", { "root": {} })
 		return
-	client.send_event("scene.tree", {
-		"root": _build_scene_tree_node(root)
-	})
+	var now := Time.get_ticks_msec() / 1000.0
+	var root_path := str(root.get_path())
+	if _scene_tree_cache.is_empty() or _scene_tree_cache.get("rootPath") != root_path or now - _scene_tree_cache_at > _SCENE_TREE_CACHE_TTL:
+		_scene_tree_cache = {
+			"rootPath": root_path,
+			"root": _build_scene_tree_node(root)
+		}
+		_scene_tree_cache_at = now
+	client.send_event("scene.tree", { "root": _scene_tree_cache.root })
 
 func _build_scene_tree_node(node: Node) -> Dictionary:
 	var entity := GameAgentHarnessClient.node_entity(node)
