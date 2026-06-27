@@ -32,7 +32,11 @@ export function encodeTextFrame(text, { masked = false } = {}) {
   } else if (payload.length <= 0xffff) {
     header.push((masked ? 0x80 : 0) | 126, (payload.length >> 8) & 0xff, payload.length & 0xff);
   } else {
-    throw new Error("Frame payload too large for this prototype");
+    header.push((masked ? 0x80 : 0) | 127);
+    const n = BigInt(payload.length);
+    for (let i = 7; i >= 0; i -= 1) {
+      header.push(Number((n >> BigInt(i * 8)) & BigInt(0xff)));
+    }
   }
 
   if (!masked) {
@@ -65,7 +69,14 @@ export function decodeFrames(buffer) {
       length = buffer.readUInt16BE(cursor);
       cursor += 2;
     } else if (length === 127) {
-      throw new Error("64-bit WebSocket frames are not supported in this prototype");
+      if (cursor + 8 > buffer.length) break;
+      const high = buffer.readUInt32BE(cursor);
+      const low = buffer.readUInt32BE(cursor + 4);
+      if (high > 0) {
+        throw new Error("WebSocket frame payload larger than 4 GiB is not supported");
+      }
+      length = low;
+      cursor += 8;
     }
 
     let mask = null;

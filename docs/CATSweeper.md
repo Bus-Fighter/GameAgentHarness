@@ -24,23 +24,29 @@ Then in Godot:
 
 1. Open CatSweeper.
 2. Enable **Game Agent Harness** in Project Settings > Plugins.
-3. Select a node such as `StageController`.
-4. Run the stage scene.
-5. Click or tap in the running game.
+3. Open the **Game Agent Harness** dock panel (left dock by default) and click
+   **Start Dashboard**.
+4. Open the dashboard URL in your browser.
+5. Select a node such as `StageController`.
+6. Run the stage scene.
+7. Click or tap in the running game.
 
 Expected trace evidence:
 
 - `engine.connected`
 - `project.opened`
 - `selection.changed`
+- `editor.context`
 - `runtime.started`
 - `scene.changed`
 - `input.pointer.pressed`
 - `state.sampled`
+- `evidence.frame` (editor and runtime screenshots)
 
 Useful agent commands from the harness root:
 
 ```bash
+node ./src/cli.js dashboard start --profile examples/catsweeper.profile.json
 node ./src/cli.js trace list --profile examples/catsweeper.profile.json
 node ./src/cli.js trace summarize latest --profile examples/catsweeper.profile.json
 node ./src/cli.js context current latest --profile examples/catsweeper.profile.json

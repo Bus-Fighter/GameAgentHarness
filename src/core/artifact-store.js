@@ -25,6 +25,13 @@ export class ArtifactStore {
     );
   }
 
+  writeBinary(traceId, fileName, buffer) {
+    const filePath = path.join(this.traceDir(traceId), fileName);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  }
+
   readJson(traceId, fileName) {
     const filePath = path.join(this.traceDir(traceId), fileName);
     if (!fs.existsSync(filePath)) {

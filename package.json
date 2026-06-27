@@ -9,6 +9,8 @@
   },
   "scripts": {
     "start": "node ./src/cli.js host start",
+    "dashboard": "node ./src/cli.js dashboard start",
+    "dashboard:lan": "node ./src/cli.js dashboard start --host 0.0.0.0 --dashboard-host 0.0.0.0",
     "test": "node --test",
     "sample": "node ./src/cli.js dev emit-sample",
     "summary": "node ./src/cli.js trace summarize latest",

@@ -58,6 +58,10 @@ export class TraceSession {
     return envelope;
   }
 
+  nextSeq() {
+    return this.seq + 1;
+  }
+
   stop() {
     if (!this.endedAt) {
       this.endedAt = new Date().toISOString();

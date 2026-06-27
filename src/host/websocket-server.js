@@ -44,11 +44,26 @@ export class WebSocketServer {
           return;
         }
 
-        socket.write(buildHandshakeResponse(requestText));
-        handshaken = true;
-        this.clients.add(socket);
-        this.onConnection?.(socket);
-        pending = pending.subarray(end + 4);
+        try {
+          socket.write(buildHandshakeResponse(requestText));
+          handshaken = true;
+          this.clients.add(socket);
+          this.onConnection?.(socket);
+          pending = pending.subarray(end + 4);
+        } catch (err) {
+          const isUpgrade = requestText.toLowerCase().includes("upgrade: websocket");
+          const status = isUpgrade ? "400 Bad Request" : "426 Upgrade Required";
+          const body = `${status}\n`;
+          socket.write(
+            `HTTP/1.1 ${status}\r\n` +
+              "Content-Type: text/plain\r\n" +
+              `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+              "Connection: close\r\n\r\n" +
+              body
+          );
+          socket.end();
+          pending = Buffer.alloc(0);
+        }
       } else {
         pending = Buffer.concat([pending, chunk]);
       }

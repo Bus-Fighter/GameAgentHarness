@@ -7,8 +7,8 @@ export function getCapabilities() {
       {
         name: "host",
         status: "available",
-        commands: ["harness host start"],
-        provides: ["local WebSocket intake", "trace session lifecycle", "artifact writing"],
+        commands: ["harness host start", "harness dashboard start"],
+        provides: ["local WebSocket intake", "trace session lifecycle", "artifact writing", "live dashboard"],
       },
       {
         name: "profiles",

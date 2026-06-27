@@ -12,6 +12,7 @@ import { emitSample } from "./dev/sample-events.js";
 import { createTestFieldTrace } from "./dev/test-field.js";
 import { installGodotAdapter } from "./godot/install-adapter.js";
 
+
 function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -40,6 +41,7 @@ function usage() {
 Usage:
   harness capabilities [--json]
   harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces]
+  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces]
   harness profile show --profile examples/test-field.profile.json [--json]
   harness context current [latest|trace-id] [--profile file] [--trace-dir traces] [--json]
   harness trace list [--trace-dir traces] [--json]
@@ -160,6 +162,33 @@ async function main() {
 
     await host.start();
     console.log(`[harness] listening on ws://${args.host ?? "127.0.0.1"}:${Number(args.port ?? 8765)}`);
+    console.log(`[harness] writing traces to ${args["trace-dir"] ?? "traces"}`);
+
+    const shutdown = () => {
+      console.log("\n[harness] stopping");
+      host.stop();
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+    return;
+  }
+
+  if (group === "dashboard" && command === "start") {
+    const dashboardHost = args["dashboard-host"] ?? "127.0.0.1";
+    const dashboardPort = Number(args["dashboard-port"] ?? 8766);
+    const host = new HarnessHost({
+      host: args.host ?? "127.0.0.1",
+      port: Number(args.port ?? 8765),
+      traceDir: args["trace-dir"] ?? "traces",
+      dashboard: true,
+      dashboardHost,
+      dashboardPort,
+    });
+
+    await host.start();
+    console.log(`[harness] intake ws://${args.host ?? "127.0.0.1"}:${Number(args.port ?? 8765)}`);
+    console.log(`[harness] dashboard http://${dashboardHost}:${dashboardPort}`);
     console.log(`[harness] writing traces to ${args["trace-dir"] ?? "traces"}`);
 
     const shutdown = () => {
