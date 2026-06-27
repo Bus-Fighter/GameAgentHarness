@@ -517,6 +517,63 @@ test("file API reads project files and git status", async (t) => {
   assert.equal(fs.readFileSync(path.join(projectRoot, "Scripts", "StageSession.cs"), "utf8"), "class StageSession { int x; }");
 });
 
+test("host sends signal subscriptions from profile after engine connects", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-signals-"));
+  const profilePath = path.join(traceRoot, "test.profile.json");
+  fs.writeFileSync(
+    profilePath,
+    JSON.stringify({
+      signalSubscriptions: [
+        {
+          match: { nodeClass: "PlayerHealthSystem" },
+          signal: "HpChanged",
+          eventType: "player.hp_changed",
+          argMapping: ["previous", "current"],
+        },
+      ],
+    }),
+  );
+
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+    profilePath,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const engineHello = await engine.nextMessage();
+  assert.equal(engineHello.kind, "host.hello");
+
+  engine.send({
+    kind: "event",
+    type: "engine.connected",
+    source: "godot",
+    engine: { name: "godot", version: "4.x" },
+    project: { name: "TestProject", root: "/tmp/test" },
+    data: {},
+  });
+
+  const controlMsg = await engine.nextMessage("control");
+  assert.equal(controlMsg.kind, "control");
+  assert.equal(controlMsg.action, "signal.subscribe");
+  assert.equal(controlMsg.signal, "HpChanged");
+  assert.equal(controlMsg.eventType, "player.hp_changed");
+  assert.deepEqual(controlMsg.argMapping, ["previous", "current"]);
+
+  engine.close();
+});
+
 test("websocket codec handles large frames", () => {
   const bigText = "x".repeat(200_000);
   const frame = encodeTextFrame(bigText);

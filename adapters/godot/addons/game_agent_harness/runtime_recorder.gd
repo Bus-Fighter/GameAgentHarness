@@ -10,6 +10,8 @@ var frame_timer := 0.0
 var last_frame_persisted := false
 var _paused := false
 var _frame_interval := 0.2
+var _signal_subscriptions: Array[Dictionary] = []
+var _signal_connected_nodes: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -86,6 +88,7 @@ func _emit_scene_if_changed(force: bool) -> void:
 			"root": _current_scene_entity()
 		}, _current_scene_entity())
 		_send_viewport_frame(true, true)
+		_scan_scene_for_subscriptions()
 
 func _emit_state_sample() -> void:
 	var root := get_tree().root
@@ -154,6 +157,15 @@ func _on_harness_control(message: Dictionary) -> void:
 		ProjectSettings.set_setting("game_agent_harness/runtime_viewport_interval", _frame_interval)
 		ProjectSettings.save()
 		_log_info("runtime viewport interval set to %.2fs from dashboard" % _frame_interval)
+	elif action == "signal.subscribe":
+		_signal_subscriptions.append({
+			"match": message.get("match", {}),
+			"signal": str(message.get("signal", "")),
+			"eventType": str(message.get("eventType", "")),
+			"argMapping": message.get("argMapping", []) as Array
+		})
+		_log_info("subscribed to signal %s -> %s" % [str(message.get("signal", "")), str(message.get("eventType", ""))])
+		_scan_scene_for_subscriptions()
 
 func _log_info(message: String) -> void:
 	print("[GameAgentHarness] %s" % message)
@@ -201,3 +213,109 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 		event = mouse
 
 	Input.parse_input_event(event)
+
+func _scan_scene_for_subscriptions() -> void:
+	var root := get_tree().root if get_tree() != null else null
+	if root == null:
+		return
+	_scan_node_for_subscriptions(root)
+
+func _scan_node_for_subscriptions(node: Node) -> void:
+	if node == null:
+		return
+	for sub in _signal_subscriptions:
+		if _node_matches_subscription(node, sub.match):
+			_connect_signal_subscription(node, sub)
+	for child in node.get_children():
+		_scan_node_for_subscriptions(child)
+
+func _node_matches_subscription(node: Node, match_rules: Dictionary) -> bool:
+	if match_rules.is_empty():
+		return false
+	if match_rules.has("nodeClass"):
+		var class_name := str(match_rules.get("nodeClass", ""))
+		if node.get_class() != class_name and not node.is_class(class_name):
+			return false
+	if match_rules.has("nodeName"):
+		if node.name != str(match_rules.get("nodeName", "")):
+			return false
+	if match_rules.has("nodePath"):
+		if not _path_matches_pattern(str(node.get_path()), str(match_rules.get("nodePath", ""))):
+			return false
+	return true
+
+func _path_matches_pattern(path: String, pattern: String) -> bool:
+	var path_parts := path.trim_prefix("/").split("/", false)
+	var pattern_parts := pattern.trim_prefix("/").split("/", false)
+	var pi := 0
+	var pj := 0
+	while pi < path_parts.size() and pj < pattern_parts.size():
+		var pp := pattern_parts[pj]
+		if pp == "**":
+			pj += 1
+			if pj >= pattern_parts.size():
+				return true
+			while pi < path_parts.size() and path_parts[pi] != pattern_parts[pj]:
+				pi += 1
+			if pi >= path_parts.size():
+				return false
+		elif pp == "*":
+			pi += 1
+			pj += 1
+		else:
+			if path_parts[pi] != pp:
+				return false
+			pi += 1
+			pj += 1
+	while pj < pattern_parts.size() and pattern_parts[pj] == "**":
+		pj += 1
+	return pi >= path_parts.size() and pj >= pattern_parts.size()
+
+func _connect_signal_subscription(node: Node, sub: Dictionary) -> void:
+	var sig_name := str(sub.get("signal", ""))
+	if sig_name.is_empty():
+		return
+	var key := "%s:%s" % [str(node.get_path()), sig_name]
+	if _signal_connected_nodes.has(key):
+		return
+	if not node.has_signal(sig_name):
+		return
+	var callable := Callable(self, "_on_subscribed_signal").bind(node, sub)
+	node.connect(sig_name, callable)
+	_signal_connected_nodes[key] = true
+
+func _on_subscribed_signal(node: Node, sub: Dictionary, arg0: Variant = null, arg1: Variant = null, arg2: Variant = null, arg3: Variant = null, arg4: Variant = null, arg5: Variant = null) -> void:
+	if client == null:
+		return
+	var args := [arg0, arg1, arg2, arg3, arg4, arg5]
+	var mapping := sub.get("argMapping", []) as Array
+	var data := {}
+	for i in range(min(args.size(), mapping.size())):
+		var arg := args[i]
+		var mapped := mapping[i]
+		if mapped is String:
+			data[mapped] = _variant_to_json(arg)
+		elif mapped is Dictionary and mapped.has("name"):
+			data[str(mapped.get("name", ""))] = _variant_to_json(arg)
+		else:
+			data[str(mapped)] = _variant_to_json(arg)
+	client.send_event(str(sub.get("eventType", "")), data, GameAgentHarnessClient.node_entity(node))
+
+func _variant_to_json(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_VECTOR2I:
+			return { "x": value.x, "y": value.y }
+		TYPE_VECTOR2:
+			return { "x": value.x, "y": value.y }
+		TYPE_VECTOR3:
+			return { "x": value.x, "y": value.y, "z": value.z }
+		TYPE_RECT2:
+			return { "position": { "x": value.position.x, "y": value.position.y }, "size": { "x": value.size.x, "y": value.size.y } }
+		TYPE_COLOR:
+			return { "r": value.r, "g": value.g, "b": value.b, "a": value.a }
+		TYPE_OBJECT:
+			if value is Node:
+				return GameAgentHarnessClient.node_entity(value as Node)
+			return str(value)
+		_:
+			return value

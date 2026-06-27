@@ -41,8 +41,8 @@ function usage() {
 
 Usage:
   harness capabilities [--json]
-  harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces] [--project-root <path>]
-  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces] [--project-root <path>] [--godot-bin <path>]
+  harness host start [--host 127.0.0.1] [--port 8765] [--trace-dir traces] [--project-root <path>] [--profile file]
+  harness dashboard start [--host 127.0.0.1] [--port 8765] [--dashboard-host 127.0.0.1] [--dashboard-port 8766] [--trace-dir traces] [--project-root <path>] [--godot-bin <path>] [--profile file]
   harness profile show --profile examples/test-field.profile.json [--json]
   harness context current [latest|trace-id] [--profile file] [--trace-dir traces] [--json]
   harness trace list [--trace-dir traces] [--json]
@@ -160,6 +160,7 @@ async function main() {
       port: Number(args.port ?? 8765),
       traceDir: args["trace-dir"] ?? "traces",
       projectRoot: args["project-root"] ?? process.cwd(),
+      profilePath: args.profile ?? null,
     });
 
     await host.start();
@@ -189,6 +190,7 @@ async function main() {
       dashboardHost,
       dashboardPort,
       godotBin: args["godot-bin"] ?? null,
+      profilePath: args.profile ?? null,
     });
 
     await host.start();

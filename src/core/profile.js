@@ -51,6 +51,7 @@ export function normalizeProfile(raw = {}, { profilePath = null } = {}) {
     interestingSignals: raw.interestingSignals ?? [],
     interestingEventTypes: raw.interestingEventTypes ?? [],
     semanticEvents: normalizeSemanticEvents(raw),
+    signalSubscriptions: raw.signalSubscriptions ?? [],
     validationScenarios: raw.validationScenarios ?? raw.scenarios ?? [],
     safety: raw.safety ?? {},
     raw,

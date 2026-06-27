@@ -6,6 +6,7 @@ import { encodeTextFrame } from "./websocket-codec.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
 import { findGodotBin, launchEditor, killProcess } from "../core/editor-launcher.js";
+import { loadProfile } from "../core/profile.js";
 import path from "node:path";
 
 export class HarnessHost {
@@ -18,11 +19,13 @@ export class HarnessHost {
     dashboardHost = "127.0.0.1",
     dashboardPort = 8766,
     godotBin = null,
+    profilePath = null,
   } = {}) {
     this.port = Number(port);
     this.host = host;
     this.projectRoot = path.resolve(projectRoot);
     this.godotBin = godotBin || findGodotBin();
+    this.profile = profilePath ? loadProfile(profilePath) : null;
     this.editorProcess = null;
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
@@ -117,7 +120,9 @@ export class HarnessHost {
 
     const event = this.trace.append(message);
     this.dashboard?.broadcastEvent(event);
-    if (event.type === "runtime.started") {
+    if (event.type === "engine.connected") {
+      this.sendSignalSubscriptions(socket);
+    } else if (event.type === "runtime.started") {
       this.runtimeRunning = true;
       this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
     } else if (event.type === "runtime.stopped") {
@@ -227,6 +232,23 @@ export class HarnessHost {
     } catch (error) {
       console.error(`[harness] launch editor failed: ${error.message}`);
       this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: error.message });
+    }
+  }
+
+  sendSignalSubscriptions(socket) {
+    const subscriptions = this.profile?.signalSubscriptions ?? this.profile?.raw?.signalSubscriptions ?? [];
+    if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
+      return;
+    }
+    for (const sub of subscriptions) {
+      this.server.send(socket, {
+        kind: "control",
+        action: "signal.subscribe",
+        match: sub.match ?? {},
+        signal: sub.signal,
+        eventType: sub.eventType,
+        argMapping: sub.argMapping ?? [],
+      });
     }
   }
 
