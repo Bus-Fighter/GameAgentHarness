@@ -76,6 +76,7 @@ export default function App() {
     setSignalsEnabled,
     setHistoryEnabled,
     setMaxHistoryEntries,
+    setPointerInjectMode,
   } = useSettings();
 
   const lastSeqRef = useRef(0);
@@ -346,6 +347,11 @@ export default function App() {
   }, [loadScenes]);
 
   useEffect(() => {
+    if (!connected) return;
+    sendControl("pointer_inject_mode", { mode: settings.pointerInjectMode });
+  }, [connected, settings.pointerInjectMode, sendControl]);
+
+  useEffect(() => {
     sendControl("runtime_viewport_interval", { interval: settings.runtimeViewportInterval });
   }, [settings.runtimeViewportInterval, sendControl]);
 
@@ -394,7 +400,7 @@ export default function App() {
   const engineConnected = (status?.engineClients ?? 0) > 0;
 
   const handlePointer = useCallback(
-    (phase: string, e: React.MouseEvent | React.TouchEvent) => {
+    (phase: string, e: MouseEvent | TouchEvent) => {
       const img = e.currentTarget as HTMLImageElement;
       const rect = img.getBoundingClientRect();
       let clientX: number;
@@ -406,8 +412,8 @@ export default function App() {
         clientX = e.changedTouches[0].clientX;
         clientY = e.changedTouches[0].clientY;
       } else {
-        clientX = (e as React.MouseEvent).clientX;
-        clientY = (e as React.MouseEvent).clientY;
+        clientX = (e as MouseEvent).clientX;
+        clientY = (e as MouseEvent).clientY;
       }
       const naturalWidth = img.naturalWidth || rect.width;
       const naturalHeight = img.naturalHeight || rect.height;
@@ -422,7 +428,7 @@ export default function App() {
       const x = Math.max(0, Math.min(1, (clientX - rect.left - offsetX) / safeWidth));
       const y = Math.max(0, Math.min(1, (clientY - rect.top - offsetY) / safeHeight));
 
-      const mouse = e as React.MouseEvent;
+      const mouse = e as MouseEvent;
       sendControl("input.pointer", {
         phase,
         x,
@@ -639,6 +645,7 @@ export default function App() {
         onSignalsEnabledChange={setSignalsEnabled}
         onHistoryEnabledChange={setHistoryEnabled}
         onMaxHistoryEntriesChange={setMaxHistoryEntries}
+        onPointerInjectModeChange={setPointerInjectMode}
       />
     </div>
   );

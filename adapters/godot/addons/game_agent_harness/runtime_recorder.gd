@@ -2,6 +2,8 @@ extends Node
 
 const ClientScript := preload("res://addons/game_agent_harness/harness_client.gd")
 
+const DEFAULT_POINTER_INJECT_MODE := "touch"
+
 var client: GameAgentHarnessClient
 var last_scene_path := ""
 var sample_timer := 0.0
@@ -12,10 +14,14 @@ var _paused := false
 var _frame_interval := 0.2
 var _signal_subscriptions: Array[Dictionary] = []
 var _signal_connected_nodes: Dictionary = {}
+var _pointer_inject_mode := DEFAULT_POINTER_INJECT_MODE
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_frame_interval = float(ProjectSettings.get_setting("game_agent_harness/runtime_viewport_interval", 0.2))
+	_pointer_inject_mode = str(ProjectSettings.get_setting("game_agent_harness/pointer_inject_mode", DEFAULT_POINTER_INJECT_MODE))
+	if _pointer_inject_mode != "mouse" and _pointer_inject_mode != "touch":
+		_pointer_inject_mode = DEFAULT_POINTER_INJECT_MODE
 	ProjectSettings.set_setting("game_agent_harness/runtime_capture_enabled", true)
 	ProjectSettings.save()
 	client = ClientScript.new()
@@ -145,6 +151,8 @@ func _on_harness_control(message: Dictionary) -> void:
 			float(message.get("y", 0.0)),
 			int(message.get("button", 0))
 		)
+	elif action == "pointer_inject_mode":
+		_set_pointer_inject_mode(str(message.get("mode", DEFAULT_POINTER_INJECT_MODE)))
 	elif action == "runtime_capture":
 		var enabled := bool(message.get("enabled", true))
 		if not ProjectSettings.has_setting("game_agent_harness/runtime_capture_enabled"):
@@ -199,7 +207,7 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 	var pos := Vector2(nx * size.x, ny * size.y)
 
 	var event: InputEvent
-	if DisplayServer.is_touchscreen_available():
+	if _pointer_inject_mode == "touch":
 		var touch := InputEventScreenTouch.new()
 		touch.position = pos
 		touch.pressed = phase != "released"
@@ -213,6 +221,17 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 		event = mouse
 
 	Input.parse_input_event(event)
+
+func _set_pointer_inject_mode(mode: String) -> void:
+	var normalized := mode.to_lower()
+	if normalized != "touch" and normalized != "mouse":
+		normalized = DEFAULT_POINTER_INJECT_MODE
+	_pointer_inject_mode = normalized
+	if not ProjectSettings.has_setting("game_agent_harness/pointer_inject_mode"):
+		ProjectSettings.set_initial_value("game_agent_harness/pointer_inject_mode", DEFAULT_POINTER_INJECT_MODE)
+	ProjectSettings.set_setting("game_agent_harness/pointer_inject_mode", _pointer_inject_mode)
+	ProjectSettings.save()
+	_log_info("pointer inject mode set to %s from dashboard" % _pointer_inject_mode)
 
 func _scan_scene_for_subscriptions() -> void:
 	var root := get_tree().root if get_tree() != null else null
@@ -291,8 +310,8 @@ func _on_subscribed_signal(node: Node, sub: Dictionary, arg0: Variant = null, ar
 	var mapping := sub.get("argMapping", []) as Array
 	var data := {}
 	for i in range(min(args.size(), mapping.size())):
-		var arg := args[i]
-		var mapped := mapping[i]
+		var arg: Variant = args[i]
+		var mapped: Variant = mapping[i]
 		if mapped is String:
 			data[mapped] = _variant_to_json(arg)
 		elif mapped is Dictionary and mapped.has("name"):

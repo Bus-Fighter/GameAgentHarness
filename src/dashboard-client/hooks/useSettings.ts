@@ -14,6 +14,7 @@ export interface DashboardSettings {
   signalsEnabled: boolean;
   historyEnabled: boolean;
   maxHistoryEntries: number;
+  pointerInjectMode: "touch" | "mouse";
 }
 
 const DEFAULTS: DashboardSettings = {
@@ -28,6 +29,7 @@ const DEFAULTS: DashboardSettings = {
   signalsEnabled: true,
   historyEnabled: true,
   maxHistoryEntries: 200,
+  pointerInjectMode: "touch",
 };
 
 function loadSettings(): DashboardSettings {
@@ -49,6 +51,9 @@ function loadSettings(): DashboardSettings {
       signalsEnabled: typeof parsed.signalsEnabled === "boolean" ? parsed.signalsEnabled : DEFAULTS.signalsEnabled,
       historyEnabled: typeof parsed.historyEnabled === "boolean" ? parsed.historyEnabled : DEFAULTS.historyEnabled,
       maxHistoryEntries: Math.max(10, Math.min(2000, Number(parsed.maxHistoryEntries) || DEFAULTS.maxHistoryEntries)),
+      pointerInjectMode: ["touch", "mouse"].includes(parsed.pointerInjectMode || "")
+        ? (parsed.pointerInjectMode as DashboardSettings["pointerInjectMode"])
+        : DEFAULTS.pointerInjectMode,
     };
   } catch {
     return DEFAULTS;
@@ -74,6 +79,7 @@ export function useSettings(): {
   setSignalsEnabled: (value: boolean) => void;
   setHistoryEnabled: (value: boolean) => void;
   setMaxHistoryEntries: (value: number) => void;
+  setPointerInjectMode: (value: DashboardSettings["pointerInjectMode"]) => void;
 } {
   const [settings, setSettings] = useState<DashboardSettings>(loadSettings);
 
@@ -130,5 +136,9 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, maxHistoryEntries: clamped }));
   }, []);
 
-  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries };
+  const setPointerInjectMode = useCallback((value: DashboardSettings["pointerInjectMode"]) => {
+    setSettings((prev) => ({ ...prev, pointerInjectMode: value }));
+  }, []);
+
+  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
 }

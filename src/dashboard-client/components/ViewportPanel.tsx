@@ -1,4 +1,4 @@
-import { useState, memo, startTransition, ViewTransition } from "react";
+import { useState, memo, startTransition, ViewTransition, useCallback, useRef } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameUrl } from "../api";
 import { FullscreenOverlay } from "./FullscreenOverlay";
@@ -9,13 +9,54 @@ interface ViewportPanelProps {
   frame: FrameMessage | null;
   source: "runtime" | "editor";
   onSourceChange: (source: "runtime" | "editor") => void;
-  onPointer: (phase: string, event: React.MouseEvent | React.TouchEvent) => void;
+  onPointer: (phase: string, event: MouseEvent | TouchEvent) => void;
 }
 
 export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const onPointerRef = useRef(onPointer);
   const imgUrl = frame && captureEnabled ? getLiveFrameUrl(frame.seq) : null;
+
+  onPointerRef.current = onPointer;
+
+  const imgRef = useCallback((node: HTMLImageElement | null) => {
+    if (node === null) return;
+
+    const makeHandler = (phase: string) => (e: Event) => {
+      e.preventDefault();
+      onPointerRef.current(phase, e as MouseEvent | TouchEvent);
+    };
+
+    const handleMouseDown = makeHandler("pressed");
+    const handleMouseUp = makeHandler("released");
+    const handleMouseMove = (e: Event) => {
+      const me = e as MouseEvent;
+      if (me.buttons > 0) {
+        e.preventDefault();
+        onPointerRef.current("moved", me);
+      }
+    };
+    const handleTouchStart = makeHandler("pressed");
+    const handleTouchEnd = makeHandler("released");
+    const handleTouchMove = makeHandler("moved");
+
+    node.addEventListener("mousedown", handleMouseDown, { passive: false });
+    node.addEventListener("mouseup", handleMouseUp, { passive: false });
+    node.addEventListener("mousemove", handleMouseMove, { passive: false });
+    node.addEventListener("touchstart", handleTouchStart, { passive: false });
+    node.addEventListener("touchend", handleTouchEnd, { passive: false });
+    node.addEventListener("touchmove", handleTouchMove, { passive: false });
+
+    return () => {
+      node.removeEventListener("mousedown", handleMouseDown);
+      node.removeEventListener("mouseup", handleMouseUp);
+      node.removeEventListener("mousemove", handleMouseMove);
+      node.removeEventListener("touchstart", handleTouchStart);
+      node.removeEventListener("touchend", handleTouchEnd);
+      node.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, []);
 
   const viewportContent = (
     <div className="relative h-full w-full bg-black">
@@ -38,17 +79,10 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       ) : null}
       {imgUrl && (
         <img
+          ref={imgRef}
           src={imgUrl}
           alt={`${source} viewport`}
-          className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-manipulation"
-          onMouseDown={(e) => onPointer("pressed", e)}
-          onMouseUp={(e) => onPointer("released", e)}
-          onMouseMove={(e) => {
-            if (e.buttons > 0) onPointer("moved", e);
-          }}
-          onTouchStart={(e) => onPointer("pressed", e)}
-          onTouchEnd={(e) => onPointer("released", e)}
-          onTouchMove={(e) => onPointer("moved", e)}
+          className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-none"
         />
       )}
       {imgUrl && frame && (

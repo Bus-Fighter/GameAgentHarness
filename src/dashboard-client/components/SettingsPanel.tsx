@@ -1,4 +1,4 @@
-import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History } from "lucide-react";
+import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History, MousePointerClick } from "lucide-react";
 import { ViewTransition } from "react";
 import type { DashboardSettings } from "../hooks/useSettings";
 
@@ -17,6 +17,7 @@ interface SettingsPanelProps {
   onSignalsEnabledChange: (value: boolean) => void;
   onHistoryEnabledChange: (value: boolean) => void;
   onMaxHistoryEntriesChange: (value: number) => void;
+  onPointerInjectModeChange: (value: DashboardSettings["pointerInjectMode"]) => void;
 }
 
 export function SettingsPanel({
@@ -34,6 +35,7 @@ export function SettingsPanel({
   onSignalsEnabledChange,
   onHistoryEnabledChange,
   onMaxHistoryEntriesChange,
+  onPointerInjectModeChange,
 }: SettingsPanelProps) {
   if (!open) return null;
 
@@ -193,6 +195,20 @@ export function SettingsPanel({
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  Viewport pointer injects as
+                </div>
+                <select
+                  value={settings.pointerInjectMode}
+                  onChange={(e) => onPointerInjectModeChange(e.target.value as DashboardSettings["pointerInjectMode"])}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                >
+                  <option value="touch">Touch event</option>
+                  <option value="mouse">Mouse button</option>
+                </select>
               </div>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
