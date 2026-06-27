@@ -451,7 +451,7 @@ export class DashboardServer {
     for (const client of targets) {
       const prefix = client.headerSent ? "\r\n" : "";
       client.headerSent = true;
-      const part = `${prefix}${boundary}\r\nContent-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
+      const part = `${prefix}${boundary}\r\nContent-Type: ${frame.contentType}\r\n\r\n`;
       try {
         client.res.write(part);
         client.res.write(frame.buffer);
@@ -466,7 +466,7 @@ export class DashboardServer {
 
   handleMjpeg(_req, res) {
     res.writeHead(200, {
-      "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
+      "Content-Type": "multipart/x-mixed-replace; boundary=frame",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
