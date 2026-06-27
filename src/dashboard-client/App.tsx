@@ -27,6 +27,7 @@ import type {
   HarnessNode,
   ResourcePreview,
   ResourceImportSettings,
+  SignalSubscription,
 } from "./types";
 
 interface EvidenceItem {
@@ -58,6 +59,7 @@ export default function App() {
   const [resourcePreview, setResourcePreview] = useState<ResourcePreview | null>(null);
   const [resourceImportSettings, setResourceImportSettings] = useState<ResourceImportSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [signalSubscriptions, setSignalSubscriptions] = useState<SignalSubscription[]>([]);
 
   const {
     settings,
@@ -241,6 +243,9 @@ export default function App() {
             if (msg.context.runtime?.running != null) {
               setRuntimeRunning(msg.context.runtime.running);
             }
+          }
+          if (msg.signalSubscriptions) {
+            setSignalSubscriptions(msg.signalSubscriptions);
           }
           break;
         case "trace":
@@ -493,6 +498,7 @@ export default function App() {
               logLevel={settings.logLevel}
               onLogLevelChange={setLogLevel}
               onClearLogs={handleClearLogs}
+              signalSubscriptions={signalSubscriptions}
             />
           </TabPanel>
         )}

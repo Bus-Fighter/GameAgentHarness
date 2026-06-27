@@ -574,6 +574,50 @@ test("host sends signal subscriptions from profile after engine connects", async
   engine.close();
 });
 
+test("dashboard hello includes signal subscriptions from profile", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-hello-signals-"));
+  const profilePath = path.join(traceRoot, "test.profile.json");
+  fs.writeFileSync(
+    profilePath,
+    JSON.stringify({
+      signalSubscriptions: [
+        {
+          match: { nodeClass: "GridSession" },
+          signal: "CellRevealed",
+          eventType: "game.reveal.result",
+          argMapping: ["position", "result"],
+        },
+      ],
+    }),
+  );
+
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+    profilePath,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
+  const msg = await dashboard.nextMessage("hello");
+  assert.equal(msg.kind, "hello");
+  assert.ok(Array.isArray(msg.signalSubscriptions));
+  assert.equal(msg.signalSubscriptions.length, 1);
+  assert.equal(msg.signalSubscriptions[0].signal, "CellRevealed");
+  assert.equal(msg.signalSubscriptions[0].eventType, "game.reveal.result");
+  dashboard.close();
+});
+
 test("websocket codec handles large frames", () => {
   const bigText = "x".repeat(200_000);
   const frame = encodeTextFrame(bigText);

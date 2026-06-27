@@ -23,9 +23,21 @@ export interface ContextMessage {
   context: HarnessContext;
 }
 
+export interface SignalSubscription {
+  match: {
+    nodeClass?: string;
+    nodeName?: string;
+    nodePath?: string;
+  };
+  signal: string;
+  eventType: string;
+  argMapping: (string | { name: string } | Record<string, unknown>)[];
+}
+
 export interface HelloMessage {
   kind: "hello";
   traceId: string | null;
+  signalSubscriptions: SignalSubscription[];
 }
 
 export interface StatusMessage {

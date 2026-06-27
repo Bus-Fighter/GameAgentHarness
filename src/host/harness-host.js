@@ -49,6 +49,7 @@ export class HarnessHost {
           onControlMessage: (message) => this.handleDashboardControl(message),
           getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
           onFlushTrace: () => this.trace?.flush(),
+          profile: this.profile,
         })
       : null;
     this.liveFrameSeq = 0;

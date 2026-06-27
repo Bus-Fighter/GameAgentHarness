@@ -1,9 +1,9 @@
 import { useState, useMemo, memo, startTransition, ViewTransition } from "react";
-import { Zap, ScrollText, Trash2 } from "lucide-react";
+import { Zap, ScrollText, Trash2, Radio } from "lucide-react";
 import { PanelHeaderActions } from "./PanelHeaderActions";
 import { FullscreenOverlay } from "./FullscreenOverlay";
 import type { DashboardSettings } from "../hooks/useSettings";
-import type { HarnessEvent, HarnessLog } from "../types";
+import type { HarnessEvent, HarnessLog, SignalSubscription } from "../types";
 
 interface EventsPanelProps {
   events: HarnessEvent[];
@@ -13,6 +13,7 @@ interface EventsPanelProps {
   logLevel?: DashboardSettings["logLevel"];
   onLogLevelChange?: (value: DashboardSettings["logLevel"]) => void;
   onClearLogs?: () => void;
+  signalSubscriptions?: SignalSubscription[];
 }
 
 function eventIcon(type: string) {
@@ -23,8 +24,12 @@ function eventIcon(type: string) {
   if (type.startsWith("runtime.")) return "runtime";
   if (type.startsWith("evidence.")) return "evidence";
   if (type.startsWith("validation")) return "validation";
+  if (type.startsWith("game.")) return "game";
+  if (type.startsWith("player.")) return "player";
+  if (type.startsWith("ui.")) return "ui";
+  if (type.startsWith("signal.")) return "signal";
   if (type.includes("error")) return "error";
-  return "state";
+  return "event";
 }
 
 function eventClass(type: string) {
@@ -34,6 +39,10 @@ function eventClass(type: string) {
   if (type.startsWith("validation")) return "text-[var(--accent)]";
   if (type.startsWith("evidence.")) return "text-[var(--info)]";
   if (type.startsWith("input.")) return "text-[var(--warning)]";
+  if (type.startsWith("game.")) return "text-[var(--success)]";
+  if (type.startsWith("player.")) return "text-[var(--accent)]";
+  if (type.startsWith("ui.")) return "text-[var(--info)]";
+  if (type.startsWith("signal.")) return "text-[var(--muted)]";
   return "";
 }
 
@@ -57,7 +66,15 @@ function formatEventDetail(event: HarnessEvent) {
   if (event.type.startsWith("validation")) {
     return (data.message as string) || (data.name as string) || event.type;
   }
+  if (event.type.startsWith("game.") || event.type.startsWith("player.") || event.type.startsWith("ui.")) {
+    return JSON.stringify(data).slice(0, 80);
+  }
   return JSON.stringify(data).slice(0, 60);
+}
+
+function isSignalEvent(type: string, subscriptions: SignalSubscription[] = []) {
+  if (subscriptions.some((sub) => sub.eventType === type)) return true;
+  return type.startsWith("game.") || type.startsWith("player.") || type.startsWith("ui.") || type.startsWith("signal.");
 }
 
 function formatTime(iso: string) {
@@ -98,8 +115,9 @@ export const EventsPanel = memo(function EventsPanel({
   logLevel = "all",
   onLogLevelChange,
   onClearLogs,
+  signalSubscriptions = [],
 }: EventsPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"events" | "logs">("events");
+  const [activeSubTab, setActiveSubTab] = useState<"events" | "signals" | "logs">("events");
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -108,18 +126,23 @@ export const EventsPanel = memo(function EventsPanel({
     return logs.filter((log) => LEVEL_ORDER[log.level] >= LEVEL_ORDER[logLevel]);
   }, [logs, logLevel]);
 
+  const signalEvents = useMemo(() => events.filter((ev) => isSignalEvent(ev.type, signalSubscriptions)), [events, signalSubscriptions]);
+
   const [selectedEvent, setSelectedEvent] = useState<HarnessEvent | null>(null);
 
   const reversedEvents = useMemo(() => [...events].reverse(), [events]);
+  const reversedSignalEvents = useMemo(() => [...signalEvents].reverse(), [signalEvents]);
   const reversedLogs = useMemo(() => [...filteredLogs].reverse(), [filteredLogs]);
+
+  const displayedEvents = activeSubTab === "signals" ? reversedSignalEvents : reversedEvents;
 
   const eventsContent = (
     <div className="min-h-0 flex-1 overflow-auto p-0">
-      {events.length === 0 ? (
-        <div className="p-4 text-center text-sm text-[var(--muted)]">No events yet.</div>
+      {displayedEvents.length === 0 ? (
+        <div className="p-4 text-center text-sm text-[var(--muted)]">{activeSubTab === "signals" ? "No signal events yet." : "No events yet."}</div>
       ) : (
         <ul className="divide-y divide-[var(--border)]">
-          {reversedEvents.map((ev) => (
+          {displayedEvents.map((ev) => (
             <li
               key={ev.seq}
               onClick={() => setSelectedEvent(ev)}
@@ -136,6 +159,25 @@ export const EventsPanel = memo(function EventsPanel({
                 </div>
               </div>
               <span className="text-xs text-[var(--muted)]">{formatTime(ev.receivedAt)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  const subscriptionsContent = (
+    <div className="min-h-0 flex-1 overflow-auto p-0">
+      {signalSubscriptions.length === 0 ? (
+        <div className="p-4 text-center text-sm text-[var(--muted)]">No signal subscriptions configured in profile.</div>
+      ) : (
+        <ul className="divide-y divide-[var(--border)]">
+          {signalSubscriptions.map((sub, idx) => (
+            <li key={idx} className="p-3 text-xs" style={{ fontSize: `${fontSize}px` }}>
+              <div className="font-medium text-[var(--text)]">{sub.signal}</div>
+              <div className="text-[var(--muted)]">
+                match:{JSON.stringify(sub.match)} → {sub.eventType}
+              </div>
             </li>
           ))}
         </ul>
@@ -194,7 +236,7 @@ export const EventsPanel = memo(function EventsPanel({
     </div>
   );
 
-  const content = activeSubTab === "events" ? eventsContent : logsContent;
+  const content = activeSubTab === "logs" ? logsContent : activeSubTab === "signals" ? subscriptionsContent : eventsContent;
 
   return (
     <>
@@ -216,6 +258,21 @@ export const EventsPanel = memo(function EventsPanel({
               </button>
               <button
                 type="button"
+                onClick={() => setActiveSubTab("signals")}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  activeSubTab === "signals"
+                    ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                    : "text-[var(--muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                <Radio className="h-3.5 w-3.5" />
+                Signals
+                {signalEvents.length > 0 && (
+                  <span className="rounded-full bg-[var(--surface)] px-1 text-[0.65rem] text-[var(--muted)]">{signalEvents.length}</span>
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveSubTab("logs")}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                   activeSubTab === "logs"
@@ -233,7 +290,7 @@ export const EventsPanel = memo(function EventsPanel({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[0.7rem] font-semibold text-[var(--muted)]">
-              {activeSubTab === "events" ? events.length : filteredLogs.length}
+              {activeSubTab === "events" ? events.length : activeSubTab === "signals" ? signalEvents.length : filteredLogs.length}
             </span>
             <PanelHeaderActions
               collapsed={collapsed}
@@ -252,7 +309,7 @@ export const EventsPanel = memo(function EventsPanel({
       </section>
       {fullscreen && (
         <ViewTransition enter="scale-in" exit="scale-out" default="none">
-          <FullscreenOverlay title={activeSubTab === "events" ? "Event Stream" : "Engine Logs"} onClose={() => setFullscreen(false)}>
+          <FullscreenOverlay title={activeSubTab === "events" ? "Event Stream" : activeSubTab === "signals" ? "Signal Events" : "Engine Logs"} onClose={() => setFullscreen(false)}>
             <section className="flex h-full min-h-0 flex-col">{content}</section>
           </FullscreenOverlay>
         </ViewTransition>

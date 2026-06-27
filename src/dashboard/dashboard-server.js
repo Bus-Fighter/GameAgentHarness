@@ -40,7 +40,7 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -48,6 +48,7 @@ export class DashboardServer {
     this.store = new ArtifactStore(traceDir);
     this.frameStore = null;
     this.trace = null;
+    this.profile = profile;
     this.server = null;
     this.clients = new Set();
     this.sseClients = new Set();
@@ -320,7 +321,7 @@ export class DashboardServer {
         this.broadcastStatus();
       });
 
-      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null, context: this.getRuntimeContext?.() ?? null });
+      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null, context: this.getRuntimeContext?.() ?? null, signalSubscriptions: this.profile?.signalSubscriptions ?? [] });
       this.broadcastStatus();
     } catch {
       socket.destroy();
@@ -399,7 +400,7 @@ export class DashboardServer {
     });
     res.write(":ok\n\n");
     this.sseClients.add(res);
-    this.sendSse(JSON.stringify({ kind: "hello", traceId: this.trace?.traceId ?? null }));
+    this.sendSse(JSON.stringify({ kind: "hello", traceId: this.trace?.traceId ?? null, signalSubscriptions: this.profile?.signalSubscriptions ?? [] }));
     this.broadcastStatus();
     res.on("close", () => {
       this.sseClients.delete(res);
