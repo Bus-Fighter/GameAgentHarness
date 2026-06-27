@@ -1088,10 +1088,10 @@ export function buildDashboardHtml() {
     </header>
 
     <nav class="mobile-tabs" aria-label="Dashboard sections">
-      <button class="mobile-tab active" data-tab="live" aria-selected="true">Live</button>
-      <button class="mobile-tab" data-tab="events" aria-selected="false">Events</button>
-      <button class="mobile-tab" data-tab="evidence" aria-selected="false">Evidence</button>
-      <button class="mobile-tab" data-tab="files" aria-selected="false">Files</button>
+      <button type="button" class="mobile-tab active" data-tab="live" aria-selected="true" onclick="switchTab('live')">Live</button>
+      <button type="button" class="mobile-tab" data-tab="events" aria-selected="false" onclick="switchTab('events')">Events</button>
+      <button type="button" class="mobile-tab" data-tab="evidence" aria-selected="false" onclick="switchTab('evidence')">Evidence</button>
+      <button type="button" class="mobile-tab" data-tab="files" aria-selected="false" onclick="switchTab('files')">Files</button>
     </nav>
 
     <main>
@@ -2043,30 +2043,18 @@ export function buildDashboardHtml() {
         renderEvidence();
       });
 
-      (function setupMobileTabs() {
+      window.switchTab = function (name) {
         const tabs = document.querySelectorAll(".mobile-tab");
         const panels = document.querySelectorAll(".tab-panel");
-        function setTab(name) {
-          tabs.forEach((t) => {
-            const active = t.dataset.tab === name;
-            t.classList.toggle("active", active);
-            t.setAttribute("aria-selected", String(active));
-          });
-          panels.forEach((p) => {
-            p.classList.toggle("active", p.dataset.panel === name);
-          });
-        }
-        tabs.forEach((tab) => {
-          tab.addEventListener("click", (e) => {
-            e.preventDefault();
-            setTab(tab.dataset.tab);
-          });
-          tab.addEventListener("pointerdown", (e) => {
-            e.preventDefault();
-            setTab(tab.dataset.tab);
-          });
+        tabs.forEach((t) => {
+          const active = t.dataset.tab === name;
+          t.classList.toggle("active", active);
+          t.setAttribute("aria-selected", String(active));
         });
-      })();
+        panels.forEach((p) => {
+          p.classList.toggle("active", p.dataset.panel === name);
+        });
+      };
 
       async function pollLiveFrame() {
         try {
