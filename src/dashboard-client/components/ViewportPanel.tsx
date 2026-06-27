@@ -1,6 +1,6 @@
-import { useState, memo, startTransition, useCallback, useRef } from "react";
+import { useState, memo, startTransition, useCallback, useRef, useEffect } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
-import { getLiveFrameMjpegUrl } from "../api";
+import { getLiveFrameMjpegUrl, getLiveFrameUrl } from "../api";
 import { FullscreenOverlay } from "./FullscreenOverlay";
 import type { FrameMessage } from "../types";
 
@@ -22,13 +22,35 @@ function generateClientId(): string {
 export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [useMjpeg, setUseMjpeg] = useState(true);
   const onPointerRef = useRef(onPointer);
   const clientId = useRef(generateClientId()).current;
+  const imgNodeRef = useRef<HTMLImageElement | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   onPointerRef.current = onPointer;
 
+  useEffect(() => {
+    setUseMjpeg(true);
+  }, [captureEnabled, source]);
+
+  const handleImgError = useCallback(() => {
+    setUseMjpeg(false);
+  }, []);
+
   const imgRef = useCallback((node: HTMLImageElement | null) => {
+    imgNodeRef.current = node;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
     if (node === null) return;
+
+    fallbackTimerRef.current = setTimeout(() => {
+      if (imgNodeRef.current && (imgNodeRef.current.naturalWidth || 0) === 0) {
+        setUseMjpeg(false);
+      }
+    }, 2500);
 
     const makeHandler = (phase: string) => (e: Event) => {
       e.preventDefault();
@@ -89,6 +111,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
           ref={imgRef}
           src={imgUrl}
           alt={`${source} viewport`}
+          onError={handleImgError}
           className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-none"
         />
       )}
@@ -103,7 +126,13 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     </div>
   );
 
-  const imgUrl = captureEnabled ? getLiveFrameMjpegUrl(clientId) : null;
+  const imgUrl = captureEnabled
+    ? useMjpeg
+      ? getLiveFrameMjpegUrl(clientId)
+      : frame
+        ? getLiveFrameUrl(frame.seq)
+        : null
+    : null;
 
   return (
     <>
