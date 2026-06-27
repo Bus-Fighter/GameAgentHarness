@@ -156,7 +156,7 @@ func _handle_control_message(message: Dictionary) -> void:
 	var action := str(message.get("action", ""))
 	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
-	elif action == "snapshot" or action == "pause" or action == "input.pointer":
+	elif action == "snapshot" or action == "pause" or action == "input.pointer" or action == "play" or action == "stop":
 		var parent := get_parent()
 		if parent != null and parent.has_method("_on_harness_control"):
 			parent._on_harness_control(message)

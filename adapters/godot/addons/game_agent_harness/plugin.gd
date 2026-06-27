@@ -53,6 +53,18 @@ func _on_tool_menu_start(_ud = null) -> void:
 	if dashboard_panel != null:
 		dashboard_panel.start_harness()
 
+func _on_harness_control(message: Dictionary) -> void:
+	var action := str(message.get("action", ""))
+	if action == "play":
+		get_editor_interface().play_current_scene()
+	elif action == "stop":
+		get_editor_interface().stop_playing_scene()
+	elif action == "snapshot" or action == "pause" or action == "input.pointer":
+		# Forwarded to runtime autoload when available
+		var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
+		if runtime != null and runtime.has_method("_on_harness_control"):
+			runtime._on_harness_control(message)
+
 func _on_selection_changed() -> void:
 	if client == null or editor_selection == null:
 		return

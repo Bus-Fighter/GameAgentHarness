@@ -154,10 +154,13 @@ test("dashboard serves HTML and status", async (t) => {
   assert.equal(index.status, 200);
   assert.match(index.body.toString("utf8"), /Game Agent Harness/);
   assert.match(index.body.toString("utf8"), /viewport-fit=cover/);
-  assert.match(index.body.toString("utf8"), /id="runtime-toggle"/);
+  assert.match(index.body.toString("utf8"), /id="record-btn"/);
+  assert.match(index.body.toString("utf8"), /id="play-btn"/);
+  assert.match(index.body.toString("utf8"), /id="stop-btn"/);
+  assert.match(index.body.toString("utf8"), /class="floating-toolbar"/);
   assert.match(index.body.toString("utf8"), /id="events-list"/);
   assert.match(index.body.toString("utf8"), /id="live-img"/);
-  assert.match(index.body.toString("utf8"), /Runtime capture/);
+  assert.match(index.body.toString("utf8"), /Record/);
   const scriptMatch = index.body.toString("utf8").match(/\u003cscript\u003e([\s\S]*?)\u003c\/script\u003e/);
   assert.ok(scriptMatch);
   assert.doesNotThrow(() => new Function(scriptMatch[1]));
@@ -314,7 +317,7 @@ test("dashboard can send control messages to engine clients", async (t) => {
   dashboard.close();
 });
 
-test("dashboard forwards snapshot, pause, and input.pointer controls to engine clients", async (t) => {
+test("dashboard forwards snapshot, pause, play, stop, and input.pointer controls to engine clients", async (t) => {
   const { host } = await createHost(t);
 
   const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
@@ -335,6 +338,16 @@ test("dashboard forwards snapshot, pause, and input.pointer controls to engine c
   assert.equal(msg.kind, "control");
   assert.equal(msg.action, "pause");
   assert.equal(msg.enabled, true);
+
+  dashboard.send({ kind: "control", action: "play" });
+  msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "play");
+
+  dashboard.send({ kind: "control", action: "stop" });
+  msg = await engine.nextMessage();
+  assert.equal(msg.kind, "control");
+  assert.equal(msg.action, "stop");
 
   dashboard.send({ kind: "control", action: "input.pointer", phase: "pressed", x: 0.5, y: 0.5, button: 1 });
   msg = await engine.nextMessage();

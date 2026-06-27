@@ -28,7 +28,7 @@ export function buildDashboardHtml() {
       --radius-sm: 8px;
       --transition: 200ms ease;
       --header-h: 56px;
-      --action-bar-h: 72px;
+      --toolbar-h: 56px;
     }
 
     * { box-sizing: border-box; }
@@ -149,7 +149,7 @@ export function buildDashboardHtml() {
       grid-template-columns: 1fr;
       gap: 16px;
       padding: 16px;
-      padding-bottom: calc(var(--action-bar-h) + 24px);
+      padding-bottom: calc(var(--toolbar-h) + 24px);
     }
 
     @media (min-width: 1024px) {
@@ -526,129 +526,116 @@ export function buildDashboardHtml() {
       max-width: 60%;
     }
 
-    /* Action bar */
-    .action-bar {
+    /* Floating transport toolbar */
+    .floating-toolbar {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 50;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      height: var(--action-bar-h);
-      padding: 0 16px;
-      background: rgba(15, 23, 42, 0.98);
-      backdrop-filter: blur(10px);
-      border-top: 1px solid var(--border);
+      gap: 4px;
+      min-height: var(--toolbar-h);
+      padding: 6px;
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 
-    @media (min-width: 1024px) {
-      .action-bar {
-        position: sticky;
-        bottom: 0;
-        border-top: none;
-        border-bottom: 1px solid var(--border);
-        margin-top: auto;
-      }
-    }
-
-    .action-group {
-      display: flex;
+    .toolbar-group {
+      display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 4px;
     }
 
-    .btn {
+    .toolbar-divider {
+      width: 1px;
+      height: 28px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .toolbar-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      min-width: 44px;
       min-height: 44px;
-      padding: 0 16px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      font-size: 0.85rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: border-color var(--transition), background var(--transition), color var(--transition);
-    }
-
-    .btn:hover, .btn:focus-visible {
-      border-color: var(--accent);
-      background: var(--surface-2);
-      outline: none;
-    }
-
-    .btn.danger:hover, .btn.danger:focus-visible {
-      border-color: var(--danger);
-      background: var(--danger-dim);
-    }
-
-    .btn svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    /* Toggle */
-    .toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text);
-      min-height: 44px;
-    }
-
-    .toggle input {
-      appearance: none;
-      width: 44px;
-      height: 24px;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
+      padding: 0;
       border-radius: 999px;
-      position: relative;
-      outline: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 500;
       cursor: pointer;
-      transition: background var(--transition), border-color var(--transition);
+      transition: border-color var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition);
     }
 
-    .toggle input::after {
-      content: "";
-      position: absolute;
-      top: 2px;
-      left: 2px;
+    .toolbar-btn:hover:not(:disabled), .toolbar-btn:focus-visible:not(:disabled) {
+      color: var(--text);
+      background: var(--surface-2);
+      border-color: var(--border);
+      outline: none;
+    }
+
+    .toolbar-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .toolbar-btn svg {
       width: 18px;
       height: 18px;
-      background: var(--text);
-      border-radius: 50%;
-      transition: transform var(--transition);
     }
 
-    .toggle input:checked {
+    .toolbar-label {
+      display: none;
+      padding-right: 10px;
+    }
+
+    .toolbar-btn.record-btn.active {
+      color: var(--danger);
+      background: var(--danger-dim);
+      border-color: rgba(239, 68, 68, 0.4);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
+    }
+
+    .toolbar-btn.record-btn.active svg {
+      fill: currentColor;
+    }
+
+    .toolbar-btn.play-btn.active {
+      color: var(--accent);
       background: var(--accent-dim);
-      border-color: var(--accent);
+      border-color: rgba(34, 197, 94, 0.4);
     }
 
-    .toggle input:checked::after {
-      transform: translateX(20px);
-      background: var(--accent);
+    .toolbar-btn.pause-btn.active {
+      color: var(--warning);
+      background: var(--warning-dim);
+      border-color: rgba(245, 158, 11, 0.4);
     }
 
-    .toggle input:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    @media (min-width: 640px) {
+      .toolbar-label { display: inline; }
+      .toolbar-btn { padding: 0 8px 0 10px; }
+    }
+
+    @media (min-width: 1024px) {
+      .floating-toolbar {
+        bottom: 16px;
+      }
     }
 
     /* Toast */
     .error-toast {
       position: fixed;
-      bottom: calc(var(--action-bar-h) + 16px);
+      bottom: calc(var(--toolbar-h) + 20px);
       left: 16px;
       right: 16px;
       z-index: 100;
@@ -878,43 +865,61 @@ export function buildDashboardHtml() {
       </section>
     </main>
 
-    <nav class="action-bar">
-      <div class="action-group">
-        <label class="toggle">
-          <input id="runtime-toggle" type="checkbox" checked>
-          <span>Runtime</span>
-        </label>
-        <button id="pause-btn" class="btn" aria-label="Pause runtime">
+    <nav class="floating-toolbar">
+      <div class="toolbar-group">
+        <button id="record-btn" class="toolbar-btn record-btn active" aria-label="Toggle runtime capture" aria-pressed="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="6" y="4" width="4" height="16"></rect>
-            <rect x="14" y="4" width="4" height="16"></rect>
+            <circle cx="12" cy="12" r="6"></circle>
           </svg>
-          <span class="hide-sm">Pause</span>
+          <span class="toolbar-label">Record</span>
         </button>
-      </div>
-      <div class="action-group">
-        <button id="snapshot-btn" class="btn" aria-label="Take snapshot">
+        <button id="snapshot-btn" class="toolbar-btn" aria-label="Take snapshot">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="13" r="3"></circle>
             <path d="M20 21H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3l2-3h6l2 3h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2z"></path>
           </svg>
-          <span class="hide-sm">Snapshot</span>
+          <span class="toolbar-label">Snapshot</span>
         </button>
-        <button id="clear-evidence-btn" class="btn danger" aria-label="Clear evidence">
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button id="play-btn" class="toolbar-btn" aria-label="Play scene" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          <span class="hide-sm">Clear</span>
+          <span class="toolbar-label">Play</span>
         </button>
-        <button id="reconnect-bottom-btn" class="btn" aria-label="Reconnect">
+        <button id="pause-btn" class="toolbar-btn" aria-label="Pause runtime" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          <span class="toolbar-label">Pause</span>
+        </button>
+        <button id="stop-btn" class="toolbar-btn" aria-label="Stop scene" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+          </svg>
+          <span class="toolbar-label">Stop</span>
+        </button>
+      </div>
+      <div class="toolbar-divider"></div>
+      <div class="toolbar-group">
+        <button id="reconnect-bottom-btn" class="toolbar-btn" aria-label="Reconnect">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
             <path d="M3 3v5h5"></path>
             <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
             <path d="M16 21h5v-5"></path>
           </svg>
-          <span class="hide-sm">Reconnect</span>
+          <span class="toolbar-label">Reconnect</span>
+        </button>
+        <button id="clear-evidence-btn" class="toolbar-btn danger" aria-label="Clear evidence">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span class="toolbar-label">Clear</span>
         </button>
       </div>
     </nav>
@@ -939,8 +944,11 @@ export function buildDashboardHtml() {
         livePlaceholder: document.getElementById("live-placeholder"),
         capturePaused: document.getElementById("capture-paused"),
         liveOverlay: document.getElementById("live-overlay"),
-        runtimeToggle: document.getElementById("runtime-toggle"),
+        runtimeToggle: document.getElementById("record-btn"),
+        recordBtn: document.getElementById("record-btn"),
+        playBtn: document.getElementById("play-btn"),
         pauseBtn: document.getElementById("pause-btn"),
+        stopBtn: document.getElementById("stop-btn"),
         snapshotBtn: document.getElementById("snapshot-btn"),
         ctxProject: document.getElementById("ctx-project"),
         ctxEngine: document.getElementById("ctx-engine"),
@@ -975,6 +983,9 @@ export function buildDashboardHtml() {
         latestStateSample: null,
         runtimeCaptureEnabled: true,
         paused: false,
+        engineConnected: false,
+        runtimeRunning: false,
+        recording: true,
         ws: null,
         eventSource: null,
         reconnectDelay: 2000,
@@ -1018,8 +1029,10 @@ export function buildDashboardHtml() {
 
       function updateEnginePill(status) {
         const hasEngine = (status.engineClients ?? 0) > 0;
+        state.engineConnected = hasEngine;
         els.enginePillText.textContent = hasEngine ? "Engine" : "No engine";
         els.enginePill.className = "pill " + (hasEngine ? "online" : "offline");
+        updateTransportUI();
       }
 
       function updateTracePill(status) {
@@ -1039,9 +1052,11 @@ export function buildDashboardHtml() {
         els.ctxEngine.textContent = context.observed?.engine?.name || context.profile?.engine?.name || "-";
         els.ctxScene.textContent = context.scene || "-";
         const running = context.runtime?.running;
+        state.runtimeRunning = Boolean(running);
         els.ctxRuntime.textContent = running ? "Running" : "Stopped";
         els.ctxRuntime.className = "pill " + (running ? "online" : "offline");
         renderStateGrid();
+        updateTransportUI();
       }
 
       function renderStateGrid() {
@@ -1257,10 +1272,23 @@ export function buildDashboardHtml() {
         els.pausePill.style.display = paused ? "inline-flex" : "none";
         els.pausePill.className = "pill " + (paused ? "warn" : "");
         els.pausePill.textContent = paused ? "Paused" : "Pause";
-        els.pauseBtn.classList.toggle("warn", paused);
+        els.pauseBtn.classList.toggle("active", paused);
         els.pauseBtn.querySelector("svg").innerHTML = paused
           ? '<polygon points="5 3 19 12 5 21 5 3"></polygon>'
           : '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+        els.pauseBtn.querySelector(".toolbar-label").textContent = paused ? "Resume" : "Pause";
+      }
+
+      function updateTransportUI() {
+        const engine = state.engineConnected;
+        const running = state.runtimeRunning;
+        els.playBtn.disabled = !engine || running;
+        els.stopBtn.disabled = !engine || !running;
+        els.pauseBtn.disabled = !running;
+        els.playBtn.classList.toggle("active", running);
+        els.recordBtn.classList.toggle("active", state.runtimeCaptureEnabled);
+        els.recordBtn.setAttribute("aria-pressed", String(state.runtimeCaptureEnabled));
+        els.recordBtn.querySelector(".toolbar-label").textContent = state.runtimeCaptureEnabled ? "Recording" : "Record";
       }
 
       function handleFrame(frame) {
@@ -1292,12 +1320,20 @@ export function buildDashboardHtml() {
         }
         if (event.type === "runtime_capture.changed") {
           state.runtimeCaptureEnabled = Boolean(event.data?.enabled);
-          els.runtimeToggle.checked = state.runtimeCaptureEnabled;
           updateViewportVisibility();
+          updateTransportUI();
         }
         if (event.type === "pause.changed") {
           state.paused = Boolean(event.data?.enabled);
           updatePauseUI();
+        }
+        if (event.type === "runtime.started") {
+          state.runtimeRunning = true;
+          updateTransportUI();
+        }
+        if (event.type === "runtime.stopped") {
+          state.runtimeRunning = false;
+          updateTransportUI();
         }
         addEvent(event);
       }
@@ -1515,13 +1551,22 @@ export function buildDashboardHtml() {
       els.reconnectBtn.addEventListener("click", doReconnect);
       els.reconnectBottomBtn.addEventListener("click", doReconnect);
 
-      els.runtimeToggle.addEventListener("change", () => {
-        state.runtimeCaptureEnabled = els.runtimeToggle.checked;
+      els.recordBtn.addEventListener("click", () => {
+        const next = !state.runtimeCaptureEnabled;
+        state.runtimeCaptureEnabled = next;
         updateViewportVisibility();
+        updateTransportUI();
         sendControl({
           kind: "control",
           action: "runtime_capture",
-          enabled: els.runtimeToggle.checked,
+          enabled: next,
+        });
+      });
+
+      els.playBtn.addEventListener("click", () => {
+        sendControl({
+          kind: "control",
+          action: "play",
         });
       });
 
@@ -1531,6 +1576,13 @@ export function buildDashboardHtml() {
           kind: "control",
           action: "pause",
           enabled: next,
+        });
+      });
+
+      els.stopBtn.addEventListener("click", () => {
+        sendControl({
+          kind: "control",
+          action: "stop",
         });
       });
 
@@ -1567,6 +1619,7 @@ export function buildDashboardHtml() {
 
       updatePauseUI();
       updateViewportVisibility();
+      updateTransportUI();
       connect();
       setInterval(fetchStatus, 2000);
       setInterval(pollLiveFrame, 2000);
