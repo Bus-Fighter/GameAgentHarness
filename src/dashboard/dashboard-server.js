@@ -449,13 +449,13 @@ export class DashboardServer {
     const boundary = "--frame";
     const targets = singleClient ? [singleClient] : this.mjpegClients;
     for (const client of targets) {
-      const prefix = client.headerSent ? "\r\n" : "";
-      client.headerSent = true;
-      const part = `${prefix}${boundary}\r\nContent-Type: ${frame.contentType}\r\n\r\n`;
+      const part = `${boundary}\r\nContent-Type: ${frame.contentType}\r\n\r\n`;
       try {
         client.res.write(part);
         client.res.write(frame.buffer);
-      } catch {
+        client.res.write("\r\n");
+      } catch (err) {
+        console.error("[mjpeg] write error:", err.message);
         try {
           client.res.end();
         } catch {}
@@ -471,7 +471,7 @@ export class DashboardServer {
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
-    const client = { res, headerSent: false };
+    const client = { res };
     this.mjpegClients.add(client);
     const frame = this.frameStore?.getFrame();
     if (frame && frame.buffer) {
