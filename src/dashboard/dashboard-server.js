@@ -2,11 +2,14 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { buildHandshakeResponse, decodeFrames, encodeTextFrame } from "../host/websocket-codec.js";
 import { ArtifactStore } from "../core/artifact-store.js";
 import { readTrace, resolveTraceId } from "../core/trace-reader.js";
 import { buildCurrentContext } from "../core/context-builder.js";
-import { buildDashboardHtml } from "./dashboard-ui.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
 
 function notFound(res) {
   res.writeHead(404, { "Content-Type": "text/plain" });
@@ -137,9 +140,12 @@ export class DashboardServer {
     }
 
     if (pathname === "/") {
-      const html = buildDashboardHtml();
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
+      this.serveStatic(res, "index.html");
+      return;
+    }
+
+    if (pathname.startsWith("/assets/")) {
+      this.serveStatic(res, pathname.slice(1));
       return;
     }
 
@@ -377,6 +383,40 @@ export class DashboardServer {
 
   broadcastEvent(event) {
     this.broadcast({ kind: "event", event });
+  }
+
+  serveStatic(res, relativePath) {
+    const filePath = path.join(DIST_DIR, relativePath);
+    if (!filePath.startsWith(DIST_DIR)) {
+      notFound(res);
+      return;
+    }
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      if (relativePath !== "index.html") {
+        this.serveStatic(res, "index.html");
+        return;
+      }
+      notFound(res);
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType =
+      ext === ".html"
+        ? "text/html; charset=utf-8"
+        : ext === ".js" || ext === ".mjs"
+          ? "application/javascript"
+          : ext === ".css"
+            ? "text/css"
+            : ext === ".json"
+              ? "application/json"
+              : ext === ".png"
+                ? "image/png"
+                : ext === ".jpg" || ext === ".jpeg"
+                  ? "image/jpeg"
+                  : ext === ".svg"
+                    ? "image/svg+xml"
+                    : "application/octet-stream";
+    serveFile(res, filePath, contentType);
   }
 
   resolveProjectPath(inputPath) {

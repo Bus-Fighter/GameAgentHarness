@@ -147,28 +147,14 @@ async function createHost(t) {
   return { host, traceRoot };
 }
 
-test("dashboard serves HTML and status", async (t) => {
+test("dashboard serves built React app and status", async (t) => {
   const { host } = await createHost(t);
 
   const index = await fetchHttp("/", DASHBOARD_PORT);
   assert.equal(index.status, 200);
   assert.match(index.body.toString("utf8"), /Game Agent Harness/);
+  assert.match(index.body.toString("utf8"), /id="root"/);
   assert.match(index.body.toString("utf8"), /viewport-fit=cover/);
-  assert.match(index.body.toString("utf8"), /id="record-btn"/);
-  assert.match(index.body.toString("utf8"), /id="play-btn"/);
-  assert.match(index.body.toString("utf8"), /id="stop-btn"/);
-  assert.match(index.body.toString("utf8"), /class="floating-toolbar"/);
-  assert.match(index.body.toString("utf8"), /id="events-list"/);
-  assert.match(index.body.toString("utf8"), /id="live-img"/);
-  assert.match(index.body.toString("utf8"), /Record/);
-  assert.match(index.body.toString("utf8"), /id="tab-git"/);
-  assert.match(index.body.toString("utf8"), /id="file-tree"/);
-  assert.match(index.body.toString("utf8"), /Code Review/);
-  assert.match(index.body.toString("utf8"), /id="connection-pill"/);
-  assert.match(index.body.toString("utf8"), /class="mobile-tab"/);
-  const scriptMatch = index.body.toString("utf8").match(/\u003cscript\u003e([\s\S]*?)\u003c\/script\u003e/);
-  assert.ok(scriptMatch);
-  assert.doesNotThrow(() => new Function(scriptMatch[1]));
 
   const status = await fetchJson("/api/status", DASHBOARD_PORT);
   assert.equal(status.traceActive, false);
