@@ -4,6 +4,10 @@ extends Node
 class_name GameAgentHarnessClient
 
 const DEFAULT_URL := "ws://127.0.0.1:8765"
+const RECONNECT_DELAY_SECONDS := 2.0
+const DEFAULT_MAX_FRAME_DIMENSION := 640
+const DEFAULT_FRAME_QUALITY := 0.8
+const WEBSOCKET_OUTBOUND_BUFFER_SIZE := 8 * 1024 * 1024
 
 var url: String = DEFAULT_URL
 var socket := WebSocketPeer.new()
@@ -11,32 +15,52 @@ var queue: Array[String] = []
 var connected := false
 var project_name := ""
 var project_root := ""
+var _reconnect_timer := 0.0
+var _should_reconnect := true
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	project_root = ProjectSettings.globalize_path("res://")
 	project_name = _detect_project_name()
+	url = ProjectSettings.get_setting("game_agent_harness/intake_url", DEFAULT_URL)
 	connect_to_host()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	socket.poll()
 	var state := socket.get_ready_state()
 	if state == WebSocketPeer.STATE_OPEN:
 		if not connected:
 			connected = true
+			_reconnect_timer = 0.0
 			send_event("engine.connected", {})
 			send_event("project.opened", {
 				"projectName": project_name,
 				"projectRoot": project_root
 			})
 		_flush_queue()
+		_receive_messages()
 	elif state == WebSocketPeer.STATE_CLOSED:
 		connected = false
+		if _should_reconnect:
+			_reconnect_timer += delta
+			if _reconnect_timer >= RECONNECT_DELAY_SECONDS:
+				_reconnect_timer = 0.0
+				_reconnect()
 
 func connect_to_host() -> void:
+	socket.set_outbound_buffer_size(WEBSOCKET_OUTBOUND_BUFFER_SIZE)
 	var err := socket.connect_to_url(url)
 	if err != OK:
 		push_warning("[GameAgentHarness] Could not connect to %s, err=%s" % [url, err])
+
+func stop_reconnecting() -> void:
+	_should_reconnect = false
+
+func _reconnect() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		return
+	socket = WebSocketPeer.new()
+	connect_to_host()
 
 func send_event(event_type: String, data: Dictionary = {}, entity: Dictionary = {}) -> void:
 	var message := {
@@ -58,6 +82,47 @@ func send_event(event_type: String, data: Dictionary = {}, entity: Dictionary = 
 	}
 	send_message(message)
 
+func send_frame(image: Image, source: String = "viewport", persist: bool = false) -> void:
+	if image == null:
+		return
+	var resized := _resize_image(image)
+	var quality: float = float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
+	var buffer := resized.save_jpg_to_buffer(quality)
+	if buffer.size() == 0:
+		return
+	var message := {
+		"kind": "frame",
+		"format": "jpeg",
+		"data": Marshalls.raw_to_base64(buffer),
+		"width": resized.get_width(),
+		"height": resized.get_height(),
+		"source": source,
+		"persist": persist,
+		"engine": {
+			"name": "godot",
+			"version": Engine.get_version_info().get("string", "")
+		},
+		"project": {
+			"name": project_name,
+			"root": project_root
+		},
+		"frame": Engine.get_process_frames(),
+		"engineTimeMs": int(Time.get_ticks_msec())
+	}
+	send_message(message)
+
+func _resize_image(image: Image) -> Image:
+	var max_dim := max(image.get_width(), image.get_height())
+	var limit := int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
+	if limit <= 0 or max_dim <= limit:
+		return image
+	var scale: float = float(limit) / float(max_dim)
+	var new_width := max(1, int(image.get_width() * scale))
+	var new_height := max(1, int(image.get_height() * scale))
+	var copy := image.duplicate()
+	copy.resize(new_width, new_height, Image.INTERPOLATE_BILINEAR)
+	return copy
+
 func send_message(message: Dictionary) -> void:
 	var text := JSON.stringify(message)
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -66,6 +131,44 @@ func send_message(message: Dictionary) -> void:
 		queue.append(text)
 		if queue.size() > 512:
 			queue.pop_front()
+
+func _receive_messages() -> void:
+	while socket.get_available_packet_count() > 0:
+		var packet := socket.get_packet()
+		var text := packet.get_string_from_utf8()
+		if text.is_empty():
+			continue
+		var parsed := JSON.new()
+		var err := parsed.parse(text)
+		if err == OK:
+			_handle_host_message(parsed.data)
+
+func _handle_host_message(message: Variant) -> void:
+	if not (message is Dictionary):
+		return
+	var kind := str(message.get("kind", ""))
+	if kind == "host.error":
+		push_warning("[GameAgentHarness] host error: %s" % str(message.get("error", "")))
+	elif kind == "control":
+		_handle_control_message(message)
+
+func _handle_control_message(message: Dictionary) -> void:
+	var action := str(message.get("action", ""))
+	if action == "live_capture":
+		_set_capture_enabled("live_capture_enabled", bool(message.get("enabled", true)))
+	elif action == "editor_capture":
+		_set_capture_enabled("editor_capture_enabled", bool(message.get("enabled", true)))
+	elif action == "runtime_capture":
+		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
+
+func _set_capture_enabled(key: String, enabled: bool) -> void:
+	if not ProjectSettings.has_setting("game_agent_harness/" + key):
+		ProjectSettings.set_initial_value("game_agent_harness/" + key, true)
+	ProjectSettings.set_setting("game_agent_harness/" + key, enabled)
+	ProjectSettings.save()
+	var event_type := key.replace("_enabled", ".changed")
+	send_event(event_type, { "enabled": enabled })
+	push_warning("[GameAgentHarness] %s %s from dashboard" % [key.replace("_enabled", "").capitalize(), "enabled" if enabled else "disabled"])
 
 func _flush_queue() -> void:
 	while queue.size() > 0 and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
