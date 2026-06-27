@@ -73,6 +73,7 @@ export default function App() {
     setEditorViewportInterval,
     setRuntimeViewportInterval,
     setEvidenceFrameInterval,
+    setUseMjpeg,
     setInspectorEnabled,
     setSignalsEnabled,
     setHistoryEnabled,
@@ -556,6 +557,7 @@ export default function App() {
                 captureEnabled={viewportSource === "runtime" ? runtimeCaptureEnabled : settings.editorViewportEnabled}
                 frame={viewportSource === "runtime" ? runtimeFrame : editorFrame}
                 source={viewportSource}
+                useMjpeg={settings.useMjpeg}
                 onSourceChange={setViewportSource}
                 onPointer={handlePointer}
               />
@@ -650,6 +652,7 @@ export default function App() {
         onEditorViewportIntervalChange={setEditorViewportInterval}
         onRuntimeViewportIntervalChange={setRuntimeViewportInterval}
         onEvidenceFrameIntervalChange={setEvidenceFrameInterval}
+        onUseMjpegChange={setUseMjpeg}
         onInspectorEnabledChange={setInspectorEnabled}
         onSignalsEnabledChange={setSignalsEnabled}
         onHistoryEnabledChange={setHistoryEnabled}

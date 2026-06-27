@@ -465,6 +465,8 @@ export class DashboardServer {
   }
 
   handleMjpeg(_req, res) {
+    const clientId = new URL(_req.url, `http://${_req.headers.host}`).searchParams.get("client") || "unknown";
+    console.log(`[mjpeg] client connected: ${clientId}`);
     res.writeHead(200, {
       "Content-Type": "multipart/x-mixed-replace; boundary=frame",
       "Cache-Control": "no-cache",
@@ -494,6 +496,11 @@ export class DashboardServer {
       );
     }
     res.on("close", () => {
+      console.log(`[mjpeg] client disconnected: ${clientId}`);
+      this.mjpegClients.delete(client);
+    });
+    res.on("error", (err) => {
+      console.error(`[mjpeg] client error: ${clientId} ${err.message}`);
       this.mjpegClients.delete(client);
     });
   }

@@ -14,6 +14,7 @@ interface SettingsPanelProps {
   onEditorViewportIntervalChange: (value: number) => void;
   onRuntimeViewportIntervalChange: (value: number) => void;
   onEvidenceFrameIntervalChange: (value: number) => void;
+  onUseMjpegChange: (value: boolean) => void;
   onInspectorEnabledChange: (value: boolean) => void;
   onSignalsEnabledChange: (value: boolean) => void;
   onHistoryEnabledChange: (value: boolean) => void;
@@ -33,6 +34,7 @@ export function SettingsPanel({
   onEditorViewportIntervalChange,
   onRuntimeViewportIntervalChange,
   onEvidenceFrameIntervalChange,
+  onUseMjpegChange,
   onInspectorEnabledChange,
   onSignalsEnabledChange,
   onHistoryEnabledChange,
@@ -221,6 +223,14 @@ export function SettingsPanel({
                   </button>
                 </div>
               </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={settings.useMjpeg}
+                  onChange={(e) => onUseMjpegChange(e.target.checked)}
+                />
+                Use MJPEG stream (fallback to polling if unsupported)
+              </label>
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
                   <MousePointerClick className="h-3.5 w-3.5" />

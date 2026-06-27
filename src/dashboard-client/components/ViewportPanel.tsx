@@ -8,6 +8,7 @@ interface ViewportPanelProps {
   captureEnabled: boolean;
   frame: FrameMessage | null;
   source: "runtime" | "editor";
+  useMjpeg: boolean;
   onSourceChange: (source: "runtime" | "editor") => void;
   onPointer: (phase: string, event: MouseEvent | TouchEvent) => void;
 }
@@ -19,10 +20,14 @@ function generateClientId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
+function logViewport(message: string, data?: Record<string, unknown>) {
+  console.log(`[harness:viewport] ${message}`, data ?? "");
+}
+
+export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, useMjpeg: useMjpegSetting, onSourceChange, onPointer }: ViewportPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const [useMjpeg, setUseMjpeg] = useState(true);
+  const [mjpegFailed, setMjpegFailed] = useState(false);
   const onPointerRef = useRef(onPointer);
   const clientId = useRef(generateClientId()).current;
   const imgNodeRef = useRef<HTMLImageElement | null>(null);
@@ -31,12 +36,16 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   onPointerRef.current = onPointer;
 
   useEffect(() => {
-    setUseMjpeg(true);
-  }, [captureEnabled, source]);
+    setMjpegFailed(false);
+    logViewport("mode reset", { source, useMjpegSetting });
+  }, [captureEnabled, source, useMjpegSetting]);
+
+  const effectiveUseMjpeg = useMjpegSetting && !mjpegFailed;
 
   const handleImgError = useCallback(() => {
-    setUseMjpeg(false);
-  }, []);
+    logViewport("MJPEG img onError fired; switching to polling", { clientId, source, fullscreen });
+    setMjpegFailed(true);
+  }, [source, fullscreen]);
 
   const imgRef = useCallback((node: HTMLImageElement | null) => {
     imgNodeRef.current = node;
@@ -46,11 +55,21 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     }
     if (node === null) return;
 
-    fallbackTimerRef.current = setTimeout(() => {
-      if (imgNodeRef.current && (imgNodeRef.current.naturalWidth || 0) === 0) {
-        setUseMjpeg(false);
-      }
-    }, 2500);
+    if (effectiveUseMjpeg) {
+      fallbackTimerRef.current = setTimeout(() => {
+        const img = imgNodeRef.current;
+        if (img && (img.naturalWidth || 0) === 0) {
+          logViewport("MJPEG naturalWidth still 0 after timeout; switching to polling", {
+            clientId,
+            src: img.src,
+            complete: img.complete,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+          });
+          setMjpegFailed(true);
+        }
+      }, 2500);
+    }
 
     const makeHandler = (phase: string) => (e: Event) => {
       e.preventDefault();
@@ -127,12 +146,16 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   );
 
   const imgUrl = captureEnabled
-    ? useMjpeg
+    ? effectiveUseMjpeg
       ? getLiveFrameMjpegUrl(clientId)
       : frame
         ? getLiveFrameUrl(frame.seq)
         : null
     : null;
+
+  useEffect(() => {
+    logViewport("url computed", { mode: effectiveUseMjpeg ? "mjpeg" : "polling", src: imgUrl, seq: frame?.seq, mjpegFailed });
+  }, [imgUrl, effectiveUseMjpeg, frame?.seq, mjpegFailed]);
 
   return (
     <>

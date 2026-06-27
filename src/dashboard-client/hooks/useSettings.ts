@@ -11,6 +11,7 @@ export interface DashboardSettings {
   editorViewportInterval: number;
   runtimeViewportInterval: number;
   evidenceFrameInterval: number;
+  useMjpeg: boolean;
   inspectorEnabled: boolean;
   signalsEnabled: boolean;
   historyEnabled: boolean;
@@ -27,6 +28,7 @@ const DEFAULTS: DashboardSettings = {
   editorViewportInterval: 0.2,
   runtimeViewportInterval: 0.5,
   evidenceFrameInterval: 5.0,
+  useMjpeg: true,
   inspectorEnabled: true,
   signalsEnabled: true,
   historyEnabled: true,
@@ -50,6 +52,7 @@ function loadSettings(): DashboardSettings {
       editorViewportInterval: Math.max(0.05, Math.min(2.0, Number(parsed.editorViewportInterval) || DEFAULTS.editorViewportInterval)),
       runtimeViewportInterval: Math.max(0.05, Math.min(2.0, Number(parsed.runtimeViewportInterval) || DEFAULTS.runtimeViewportInterval)),
       evidenceFrameInterval: Math.max(0.5, Math.min(60.0, Number(parsed.evidenceFrameInterval) || DEFAULTS.evidenceFrameInterval)),
+      useMjpeg: typeof parsed.useMjpeg === "boolean" ? parsed.useMjpeg : DEFAULTS.useMjpeg,
       inspectorEnabled: typeof parsed.inspectorEnabled === "boolean" ? parsed.inspectorEnabled : DEFAULTS.inspectorEnabled,
       signalsEnabled: typeof parsed.signalsEnabled === "boolean" ? parsed.signalsEnabled : DEFAULTS.signalsEnabled,
       historyEnabled: typeof parsed.historyEnabled === "boolean" ? parsed.historyEnabled : DEFAULTS.historyEnabled,
@@ -79,6 +82,7 @@ export function useSettings(): {
   setEditorViewportInterval: (value: number) => void;
   setRuntimeViewportInterval: (value: number) => void;
   setEvidenceFrameInterval: (value: number) => void;
+  setUseMjpeg: (value: boolean) => void;
   setInspectorEnabled: (value: boolean) => void;
   setSignalsEnabled: (value: boolean) => void;
   setHistoryEnabled: (value: boolean) => void;
@@ -128,6 +132,10 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, evidenceFrameInterval: clamped }));
   }, []);
 
+  const setUseMjpeg = useCallback((value: boolean) => {
+    setSettings((prev) => ({ ...prev, useMjpeg: value }));
+  }, []);
+
   const setInspectorEnabled = useCallback((value: boolean) => {
     setSettings((prev) => ({ ...prev, inspectorEnabled: value }));
   }, []);
@@ -149,5 +157,5 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, pointerInjectMode: value }));
   }, []);
 
-  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
+  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setUseMjpeg, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
 }
