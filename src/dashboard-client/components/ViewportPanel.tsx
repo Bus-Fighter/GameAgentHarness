@@ -12,11 +12,19 @@ interface ViewportPanelProps {
   onPointer: (phase: string, event: MouseEvent | TouchEvent) => void;
 }
 
+function generateClientId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, onSourceChange, onPointer }: ViewportPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const onPointerRef = useRef(onPointer);
-  const imgUrl = captureEnabled ? getLiveFrameMjpegUrl() : null;
+  const panelClientId = useRef(generateClientId()).current;
+  const fullscreenClientId = useRef(generateClientId()).current;
 
   onPointerRef.current = onPointer;
 
@@ -58,7 +66,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     };
   }, []);
 
-  const viewportContent = (
+  const renderViewportContent = (imgUrl: string | null) => (
     <div className="relative h-full w-full bg-black">
       {!imgUrl ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-4 text-center text-[var(--muted)]">
@@ -95,6 +103,9 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       )}
     </div>
   );
+
+  const panelImgUrl = captureEnabled ? getLiveFrameMjpegUrl(panelClientId) : null;
+  const fullscreenImgUrl = captureEnabled ? getLiveFrameMjpegUrl(fullscreenClientId) : null;
 
   return (
     <>
@@ -153,14 +164,14 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
           }`}
         >
           <div className="relative aspect-[16/10] max-h-[35vh] overflow-hidden bg-black lg:max-h-none">
-            {viewportContent}
+            {!fullscreen && renderViewportContent(panelImgUrl)}
           </div>
         </div>
       </section>
       {fullscreen && (
         <ViewTransition enter="scale-in" exit="scale-out" default="none">
           <FullscreenOverlay title="Live Viewport" onClose={() => setFullscreen(false)}>
-            {viewportContent}
+            {renderViewportContent(fullscreenImgUrl)}
           </FullscreenOverlay>
         </ViewTransition>
       )}
