@@ -62,6 +62,7 @@ export default function App() {
   const [signalSubscriptions, setSignalSubscriptions] = useState<SignalSubscription[]>([]);
   const [scenes, setScenes] = useState<string[]>([]);
   const [activeScene, setActiveScene] = useState<string | null>(null);
+  const [editorActive, setEditorActive] = useState(false);
 
   const {
     settings,
@@ -262,7 +263,12 @@ export default function App() {
         case "hello":
           if (msg.traceId) {
             setTraceId(msg.traceId);
-            fetchStatus().then(setStatus).catch(console.error);
+            fetchStatus()
+              .then((s) => {
+                setStatus(s);
+                setEditorActive(s.editorActive);
+              })
+              .catch(console.error);
           }
           if (msg.context) {
             setContext(msg.context);
@@ -310,9 +316,11 @@ export default function App() {
             dashboardSseClients: msg.dashboardSseClients,
             engineClients: msg.engineClients,
             lastEngineAt: msg.lastEngineAt,
+            editorActive: msg.editorActive,
             intakeUrl: msg.intakeUrl,
             latestFrame: msg.latestFrame,
           });
+          setEditorActive(msg.editorActive);
           if (msg.latestFrame) {
             if (msg.latestFrame.source === "editor") {
               setEditorFrame(msg.latestFrame);
@@ -493,8 +501,8 @@ export default function App() {
   }, [loadScenes]);
 
   const handleLaunchEditor = useCallback(() => {
-    sendControl("launch.editor");
-  }, [sendControl]);
+    sendControl("launch.editor", { enabled: !editorActive });
+  }, [editorActive, sendControl]);
 
   const handleClearLogs = useCallback(() => {
     setLogs([]);
@@ -626,6 +634,7 @@ export default function App() {
         engineConnected={engineConnected}
         captureEnabled={runtimeCaptureEnabled}
         paused={paused}
+        editorActive={editorActive}
         onRecord={handleRecord}
         onSnapshot={handleSnapshot}
         onPlay={handlePlay}

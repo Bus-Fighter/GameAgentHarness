@@ -44,7 +44,7 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -59,6 +59,7 @@ export class DashboardServer {
     this.mjpegClients = new Set();
     this.engineClientCount = engineClientCount;
     this.lastEngineAt = lastEngineAt;
+    this.editorActive = editorActive;
     this.onControlMessage = onControlMessage;
     this.getRuntimeContext = getRuntimeContext;
     this.onFlushTrace = onFlushTrace;
@@ -75,6 +76,7 @@ export class DashboardServer {
       dashboardSseClients: this.sseClients.size,
       engineClients: this.engineClientCount?.() ?? 0,
       lastEngineAt: this.lastEngineAt?.() ?? null,
+      editorActive: Boolean(this.editorActive?.()),
       intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
       latestFrame: frame
         ? {
@@ -208,6 +210,7 @@ export class DashboardServer {
         dashboardSseClients: this.sseClients.size,
         engineClients: this.engineClientCount?.() ?? 0,
         lastEngineAt: this.lastEngineAt?.() ?? null,
+        editorActive: Boolean(this.editorActive?.()),
         intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
         latestFrame: frame
           ? {
@@ -446,14 +449,29 @@ export class DashboardServer {
   }
 
   broadcastMjpegFrame(frame, singleClient = null) {
+    // Use the de-facto MJPEG convention: the header boundary includes the
+    // leading "--" and each part starts with that exact delimiter. Many
+    // browsers (and Home Assistant) use this form; the strict RFC form of
+    // "boundary=frame" + body "--frame" is not universally parsed.
     const boundary = "--frame";
+    const header = `Content-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
     const targets = singleClient ? [singleClient] : this.mjpegClients;
     for (const client of targets) {
-      const part = `${boundary}\r\nContent-Type: ${frame.contentType}\r\n\r\n`;
       try {
-        client.res.write(part);
-        client.res.write(frame.buffer);
-        client.res.write("\r\n");
+        const writeFrame = () => {
+          client.res.write(boundary);
+          client.res.write("\r\n");
+          client.res.write(header);
+          client.res.write(frame.buffer);
+          client.res.write("\r\n");
+        };
+        writeFrame();
+        // Chrome sometimes displays the n-1 frame; send the first frame twice
+        // so the stream starts rendering immediately.
+        if (client.firstFrame) {
+          client.firstFrame = false;
+          writeFrame();
+        }
       } catch (err) {
         console.error("[mjpeg] write error:", err.message);
         try {
@@ -468,12 +486,12 @@ export class DashboardServer {
     const clientId = new URL(_req.url, `http://${_req.headers.host}`).searchParams.get("client") || "unknown";
     console.log(`[mjpeg] client connected: ${clientId}`);
     res.writeHead(200, {
-      "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+      "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
-    const client = { res };
+    const client = { res, firstFrame: true };
     this.mjpegClients.add(client);
     const frame = this.frameStore?.getFrame();
     if (frame && frame.buffer) {

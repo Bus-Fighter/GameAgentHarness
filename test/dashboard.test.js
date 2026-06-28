@@ -166,6 +166,7 @@ test("dashboard serves built React app and status", async (t) => {
   assert.equal(status.dashboardClients, 0);
   assert.equal(status.engineClients, 0);
   assert.equal(status.lastEngineAt, null);
+  assert.equal(status.editorActive, false);
   assert.equal(status.intakeUrl, "ws://127.0.0.1:18765");
   assert.equal(status.latestFrame, null);
 });
@@ -667,6 +668,54 @@ test("dashboard hello includes signal subscriptions from profile", async (t) => 
   assert.equal(msg.signalSubscriptions.length, 1);
   assert.equal(msg.signalSubscriptions[0].signal, "CellRevealed");
   assert.equal(msg.signalSubscriptions[0].eventType, "game.reveal.result");
+  dashboard.close();
+});
+
+test("status reflects editorActive from editor-only events", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-editor-active-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const engineHello = await engine.nextMessage();
+  assert.equal(engineHello.kind, "host.hello");
+
+  engine.send({
+    kind: "event",
+    type: "plugin.enabled",
+    source: "godot",
+    engine: { name: "godot", version: "4.x" },
+    project: { name: "TestProject", root: "/tmp/test" },
+    data: {},
+  });
+
+  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
+  const hello = await dashboard.nextMessage("hello");
+  assert.equal(hello.kind, "hello");
+
+  const status = await dashboard.nextMessage("status");
+  assert.equal(status.kind, "status");
+  assert.equal(status.engineClients, 1);
+  assert.equal(status.editorActive, true);
+
+  engine.close();
+  await dashboard.nextMessage("status");
+  const statusAfter = await fetchJson("/api/status", DASHBOARD_PORT);
+  assert.equal(statusAfter.editorActive, false);
+
   dashboard.close();
 });
 

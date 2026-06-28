@@ -14,6 +14,7 @@ interface TransportToolbarProps {
   engineConnected: boolean;
   captureEnabled: boolean;
   paused: boolean;
+  editorActive?: boolean;
   onRecord: () => void;
   onSnapshot: () => void;
   onPlay: () => void;
@@ -29,6 +30,7 @@ export function TransportToolbar({
   engineConnected,
   captureEnabled,
   paused,
+  editorActive,
   onRecord,
   onSnapshot,
   onPlay,
@@ -39,7 +41,7 @@ export function TransportToolbar({
   onLaunchEditor,
 }: TransportToolbarProps) {
   const recording = captureEnabled && runtimeRunning;
-  const launchLabel = engineConnected ? "Restart Godot" : "Launch Godot";
+  const launchLabel = editorActive ? "Close Godot" : "Launch Godot";
 
   return (
     <nav
@@ -47,7 +49,7 @@ export function TransportToolbar({
       style={{ viewTransitionName: "persistent-toolbar" }}
     >
       {onLaunchEditor && (
-        <ToolbarButton onClick={onLaunchEditor} label={launchLabel}>
+        <ToolbarButton onClick={onLaunchEditor} active={editorActive} label={launchLabel}>
           <Monitor className="h-4.5 w-4.5" />
         </ToolbarButton>
       )}

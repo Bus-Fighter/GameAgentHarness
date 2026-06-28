@@ -217,6 +217,9 @@ func _on_harness_control(message: Dictionary) -> void:
 			var res_path := open_path if open_path.begins_with("res://") else "res://" + open_path.replace("\\", "/")
 			get_editor_interface().open_scene_from_path(res_path)
 			_send_history("dashboard", "scene.open", { "path": open_path })
+	elif action == "quit":
+		get_tree().quit()
+		_send_history("dashboard", "quit", {})
 	elif action == "scene.tree":
 		_send_scene_tree()
 	elif action == "inspector.query":

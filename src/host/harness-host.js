@@ -27,6 +27,8 @@ export class HarnessHost {
     this.godotBin = godotBin || findGodotBin();
     this.profile = profilePath ? loadProfile(profilePath) : null;
     this.editorProcess = null;
+    this.editorSockets = new Set();
+    this.editorActive = false;
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
     this.server = new WebSocketServer({
@@ -46,6 +48,7 @@ export class HarnessHost {
           intakePort: this.port,
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
+          editorActive: () => this.editorActive,
           onControlMessage: (message) => this.handleDashboardControl(message),
           getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
           onFlushTrace: () => this.trace?.flush(),
@@ -123,6 +126,11 @@ export class HarnessHost {
     this.dashboard?.broadcastEvent(event);
     if (event.type === "engine.connected") {
       this.sendSignalSubscriptions(socket);
+    } else if (event.type === "plugin.enabled" || event.type === "editor.context") {
+      if (!this.editorSockets.has(socket)) {
+        this.editorSockets.add(socket);
+        this.updateEditorActive();
+      }
     } else if (event.type === "runtime.started") {
       this.runtimeRunning = true;
       this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
@@ -135,9 +143,15 @@ export class HarnessHost {
 
   onEngineDisconnect(socket) {
     this.lastEngineAt = new Date().toISOString();
-    if (this.server.clients.size === 0 && this.runtimeRunning) {
-      this.runtimeRunning = false;
-      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
+    const wasEditor = this.editorSockets.delete(socket);
+    if (this.server.clients.size === 0) {
+      if (this.runtimeRunning) {
+        this.runtimeRunning = false;
+        this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
+      }
+    }
+    if (wasEditor) {
+      this.updateEditorActive();
     }
     this.dashboard?.broadcastStatus();
   }
@@ -233,7 +247,21 @@ export class HarnessHost {
     this.forwardControlToEngine(message);
   }
 
-  handleLaunchEditor(_message) {
+  handleLaunchEditor(message) {
+    const enabled = message.enabled !== false;
+    if (!enabled) {
+      if (this.editorProcess) {
+        console.log("[harness] closing Godot editor");
+        killProcess(this.editorProcess);
+        this.editorProcess = null;
+      }
+      if (this.editorActive) {
+        this.forwardControlToEngine({ action: "quit" });
+      }
+      this.updateEditorActive();
+      return;
+    }
+
     if (this.editorProcess) {
       console.log("[harness] restarting Godot editor");
       killProcess(this.editorProcess);
@@ -243,11 +271,30 @@ export class HarnessHost {
     }
 
     try {
-      this.editorProcess = launchEditor({ godotBin: this.godotBin, projectRoot: this.projectRoot });
-      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, pid: this.editorProcess.pid });
+      const process = launchEditor({ godotBin: this.godotBin, projectRoot: this.projectRoot });
+      this.editorProcess = process;
+      this.updateEditorActive();
+      process.on("exit", () => {
+        if (this.editorProcess === process) {
+          this.editorProcess = null;
+          this.updateEditorActive();
+        }
+      });
+      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, pid: process.pid });
+      this.dashboard?.broadcastStatus();
     } catch (error) {
+      this.editorProcess = null;
+      this.updateEditorActive();
       console.error(`[harness] launch editor failed: ${error.message}`);
       this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: error.message });
+    }
+  }
+
+  updateEditorActive() {
+    const active = this.editorProcess != null || this.editorSockets.size > 0;
+    if (this.editorActive !== active) {
+      this.editorActive = active;
+      this.dashboard?.broadcastStatus();
     }
   }
 

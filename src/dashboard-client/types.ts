@@ -49,6 +49,7 @@ export interface StatusMessage {
   dashboardSseClients: number;
   engineClients: number;
   lastEngineAt: string | null;
+  editorActive: boolean;
   intakeUrl: string;
   latestFrame: FrameMessage | null;
 }
@@ -153,6 +154,7 @@ export interface StatusResponse {
   dashboardSseClients: number;
   engineClients: number;
   lastEngineAt: string | null;
+  editorActive: boolean;
   intakeUrl: string;
   latestFrame: FrameMessage | null;
 }

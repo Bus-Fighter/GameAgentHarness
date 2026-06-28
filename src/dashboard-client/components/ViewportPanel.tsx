@@ -1,6 +1,7 @@
 import { useState, memo, startTransition, useCallback, useRef, useEffect } from "react";
 import { Monitor, Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameMjpegUrl, getLiveFrameUrl } from "../api";
+import { useMjpegStream } from "../hooks/useMjpegStream";
 import { FullscreenOverlay } from "./FullscreenOverlay";
 import type { FrameMessage } from "../types";
 
@@ -32,20 +33,29 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   const clientId = useRef(generateClientId()).current;
   const imgNodeRef = useRef<HTMLImageElement | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevUseMjpegSettingRef = useRef(useMjpegSetting);
 
   onPointerRef.current = onPointer;
 
   useEffect(() => {
-    setMjpegFailed(false);
-    logViewport("mode reset", { source, useMjpegSetting });
-  }, [captureEnabled, source, useMjpegSetting]);
+    // Only re-enable MJPEG if the user toggled the setting back on.
+    if (useMjpegSetting && !prevUseMjpegSettingRef.current) {
+      setMjpegFailed(false);
+      logViewport("MJPEG re-enabled by setting toggle", { source });
+    }
+    prevUseMjpegSettingRef.current = useMjpegSetting;
+  }, [useMjpegSetting, source]);
 
   const effectiveUseMjpeg = useMjpegSetting && !mjpegFailed;
 
-  const handleImgError = useCallback(() => {
-    logViewport("MJPEG img onError fired; switching to polling", { clientId, source, fullscreen });
+  const markMjpegFailed = useCallback((reason: string, details?: Record<string, unknown>) => {
+    logViewport(`MJPEG failed (${reason}); switching to polling`, { clientId, source, fullscreen, ...details });
     setMjpegFailed(true);
   }, [source, fullscreen]);
+
+  const handleImgError = useCallback(() => {
+    markMjpegFailed("img onError");
+  }, [markMjpegFailed]);
 
   const imgRef = useCallback((node: HTMLImageElement | null) => {
     imgNodeRef.current = node;
@@ -59,14 +69,13 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       fallbackTimerRef.current = setTimeout(() => {
         const img = imgNodeRef.current;
         if (img && (img.naturalWidth || 0) === 0) {
-          logViewport("MJPEG naturalWidth still 0 after timeout; switching to polling", {
-            clientId,
+          markMjpegFailed("naturalWidth timeout", {
             src: img.src,
             complete: img.complete,
             naturalWidth: img.naturalWidth,
             naturalHeight: img.naturalHeight,
+            readyState: img.readyState,
           });
-          setMjpegFailed(true);
         }
       }, 2500);
     }
@@ -104,7 +113,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       node.removeEventListener("touchend", handleTouchEnd);
       node.removeEventListener("touchmove", handleTouchMove);
     };
-  }, []);
+  }, [effectiveUseMjpeg, markMjpegFailed]);
 
   const renderViewportContent = (imgUrl: string | null) => (
     <div className="relative h-full w-full bg-black">
@@ -145,17 +154,33 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     </div>
   );
 
+  const { url: mjpegBlobUrl, failed: mjpegStreamFailed } = useMjpegStream(
+    effectiveUseMjpeg && captureEnabled,
+    getLiveFrameMjpegUrl(clientId),
+  );
+
+  useEffect(() => {
+    if (mjpegStreamFailed) {
+      markMjpegFailed("manual parser");
+    }
+  }, [mjpegStreamFailed, markMjpegFailed]);
+
   const imgUrl = captureEnabled
     ? effectiveUseMjpeg
-      ? getLiveFrameMjpegUrl(clientId)
+      ? mjpegBlobUrl || (frame ? getLiveFrameUrl(frame.seq) : null)
       : frame
         ? getLiveFrameUrl(frame.seq)
         : null
     : null;
 
   useEffect(() => {
-    logViewport("url computed", { mode: effectiveUseMjpeg ? "mjpeg" : "polling", src: imgUrl, seq: frame?.seq, mjpegFailed });
-  }, [imgUrl, effectiveUseMjpeg, frame?.seq, mjpegFailed]);
+    logViewport("url computed", {
+      mode: effectiveUseMjpeg ? "mjpeg-manual" : "polling",
+      seq: frame?.seq,
+      mjpegFailed,
+      hasBlob: Boolean(mjpegBlobUrl),
+    });
+  }, [effectiveUseMjpeg, frame?.seq, mjpegFailed, mjpegBlobUrl]);
 
   return (
     <>
