@@ -92,6 +92,7 @@ export default function App() {
     setRuntimeViewportInterval,
     setEvidenceFrameInterval,
     setUseMjpeg,
+    setDeduplicateFrames,
     setInspectorEnabled,
     setSignalsEnabled,
     setHistoryEnabled,
@@ -102,6 +103,8 @@ export default function App() {
   const lastSeqRef = useRef(0);
   const maxLogLinesRef = useRef(settings.maxLogLines);
   const maxHistoryEntriesRef = useRef(settings.maxHistoryEntries);
+  const deduplicateFramesRef = useRef(settings.deduplicateFrames);
+  const pointerInjectModeRef = useRef(settings.pointerInjectMode);
   const pendingSelectionPathRef = useRef<string | null>(null);
   const latestRuntimeFrameRef = useRef<FrameMessage | null>(null);
   const latestEditorFrameRef = useRef<FrameMessage | null>(null);
@@ -113,6 +116,12 @@ export default function App() {
   useEffect(() => {
     maxHistoryEntriesRef.current = settings.maxHistoryEntries;
   }, [settings.maxHistoryEntries]);
+  useEffect(() => {
+    deduplicateFramesRef.current = settings.deduplicateFrames;
+  }, [settings.deduplicateFrames]);
+  useEffect(() => {
+    pointerInjectModeRef.current = settings.pointerInjectMode;
+  }, [settings.pointerInjectMode]);
 
   const addToast = useCallback((type: Toast["type"], message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -187,6 +196,8 @@ export default function App() {
 
       if (event.type === "engine.connected" || event.type === "plugin.enabled") {
         sendControl("scene.tree");
+        sendControl("frame_deduplication", { enabled: deduplicateFramesRef.current });
+        sendControl("pointer_inject_mode", { mode: pointerInjectModeRef.current });
       }
       if (event.type?.startsWith("evidence.") && event.data?.path && traceId) {
         setEvidence((prev) => {
@@ -452,6 +463,11 @@ export default function App() {
   useEffect(() => {
     loadScenes();
   }, [loadScenes]);
+
+  useEffect(() => {
+    if (!connected) return;
+    sendControl("frame_deduplication", { enabled: settings.deduplicateFrames });
+  }, [connected, settings.deduplicateFrames, sendControl]);
 
   useEffect(() => {
     if (!connected) return;
@@ -802,6 +818,7 @@ export default function App() {
         onRuntimeViewportIntervalChange={setRuntimeViewportInterval}
         onEvidenceFrameIntervalChange={setEvidenceFrameInterval}
         onUseMjpegChange={setUseMjpeg}
+        onDeduplicateFramesChange={setDeduplicateFrames}
         onInspectorEnabledChange={setInspectorEnabled}
         onSignalsEnabledChange={setSignalsEnabled}
         onHistoryEnabledChange={setHistoryEnabled}

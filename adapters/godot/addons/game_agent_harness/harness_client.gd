@@ -17,6 +17,7 @@ var project_name := ""
 var project_root := ""
 var _reconnect_timer := 0.0
 var _should_reconnect := true
+var _deduplicate_frames := true
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 
 func _ready() -> void:
@@ -94,7 +95,7 @@ func send_frame(image: Image, source: String = "viewport", persist: bool = false
 	if image == null:
 		return
 	var sample_hash := _hash_image_samples(image)
-	if not force and not persist and sample_hash == _last_image_sample_hash:
+	if _deduplicate_frames and not force and not persist and sample_hash == _last_image_sample_hash:
 		return
 	_last_image_sample_hash = sample_hash
 	var resized := _resize_image(image)
@@ -104,9 +105,11 @@ func send_frame(image: Image, source: String = "viewport", persist: bool = false
 		return
 
 	var hash := _hash_buffer(buffer)
-	if not force and not persist and hash == _last_frame_hash:
+	if _deduplicate_frames and not force and not persist and hash == _last_frame_hash:
 		_last_frame_hash_count += 1
-		return
+		# Heartbeat: send a frame every ~5 seconds even if identical so the dashboard stream stays alive.
+		if _last_frame_hash_count < 25:
+			return
 	_last_frame_hash = hash
 	_last_frame_hash_count = 0
 
@@ -200,6 +203,8 @@ func _handle_control_message(message: Dictionary) -> void:
 	_log_debug("client received control: %s" % action)
 	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
+	elif action == "frame_deduplication":
+		_set_frame_deduplication(bool(message.get("enabled", true)))
 	# Let the parent plugin/runtime handle everything else (play, stop, snapshot, etc.)
 	var parent := get_parent()
 	if parent != null and parent.has_method("_on_harness_control"):
@@ -207,6 +212,10 @@ func _handle_control_message(message: Dictionary) -> void:
 		parent._on_harness_control(message)
 	else:
 		_log_debug("no parent handler for control: %s" % action)
+
+func _set_frame_deduplication(enabled: bool) -> void:
+	_deduplicate_frames = enabled
+	_log_info("frame deduplication %s from dashboard" % ("enabled" if enabled else "disabled"))
 
 func _set_capture_enabled(key: String, enabled: bool) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/" + key):

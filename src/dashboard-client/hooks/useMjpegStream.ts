@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const BOUNDARY = "--frame";
 const BOUNDARY_WITH_PREFIX = "\r\n--frame";
 const DOUBLE_CRLF = "\r\n\r\n";
+const FRAME_TIMEOUT_MS = 3000;
 
 export interface MjpegStreamState {
   url: string | null;
@@ -11,9 +12,24 @@ export interface MjpegStreamState {
 
 export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState {
   const [state, setState] = useState<MjpegStreamState>({ url: null, failed: false });
+  const lastFrameAtRef = useRef<number | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFrameTimeout = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  const scheduleFrameTimeout = (onTimeout: () => void) => {
+    clearFrameTimeout();
+    timeoutRef.current = setTimeout(onTimeout, FRAME_TIMEOUT_MS);
+  };
 
   useEffect(() => {
     if (!enabled) {
+      clearFrameTimeout();
       setState({ url: null, failed: false });
       return;
     }
@@ -37,6 +53,7 @@ export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState 
         const next = URL.createObjectURL(blob);
         release();
         currentBlobUrl = next;
+        lastFrameAtRef.current = Date.now();
         setState({ url: next, failed: false });
       } catch {
         setState({ url: null, failed: true });
@@ -45,6 +62,12 @@ export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState 
 
     const parse = async () => {
       try {
+        scheduleFrameTimeout(() => {
+          if (!cancelled) {
+            setState({ url: null, failed: true });
+          }
+        });
+
         const response = await fetch(url, { signal: controller.signal });
         if (!response.body) {
           throw new Error("response has no body");
@@ -79,6 +102,11 @@ export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState 
             const headers = text.slice(headerStart, headerEnd);
             const contentType = headers.match(/Content-Type:\s*([^\r\n]+)/i)?.[1]?.trim() || "image/jpeg";
             updateFrame(buffer.subarray(bodyStart, nextBoundary), contentType);
+            scheduleFrameTimeout(() => {
+              if (!cancelled) {
+                setState({ url: null, failed: true });
+              }
+            });
 
             buffer = buffer.slice(nextBoundary);
             text = text.slice(nextBoundary);
@@ -89,6 +117,7 @@ export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState 
           setState((prev) => ({ ...prev, failed: true }));
         }
       } finally {
+        clearFrameTimeout();
         release();
         if (!cancelled) {
           setState((prev) => ({ ...prev, url: null }));
@@ -99,6 +128,7 @@ export function useMjpegStream(enabled: boolean, url: string): MjpegStreamState 
     parse();
     return () => {
       cancelled = true;
+      clearFrameTimeout();
       controller.abort();
       release();
       setState({ url: null, failed: false });

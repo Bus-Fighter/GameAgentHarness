@@ -78,17 +78,20 @@ func _input(event: InputEvent) -> void:
 			"y": event.position.y,
 			"buttonIndex": event.button_index
 		}, _current_scene_entity())
+		_send_viewport_frame(true, true)
 	elif event is InputEventScreenTouch and event.pressed:
 		client.send_event("input.pointer.pressed", {
 			"x": event.position.x,
 			"y": event.position.y,
 			"index": event.index
 		}, _current_scene_entity())
+		_send_viewport_frame(true, true)
 	elif event is InputEventKey and event.pressed:
 		client.send_event("input.action.pressed", {
 			"keycode": event.keycode,
 			"physicalKeycode": event.physical_keycode
 		}, _current_scene_entity())
+		_send_viewport_frame(true, true)
 
 func _emit_scene_if_changed(force: bool) -> void:
 	var scene := get_tree().current_scene

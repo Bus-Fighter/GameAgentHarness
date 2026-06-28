@@ -65,6 +65,15 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
 
   const effectiveUseMjpeg = useMjpegSetting && !mjpegFailed;
 
+  useEffect(() => {
+    if (!mjpegFailed || !useMjpegSetting) return;
+    const timer = setTimeout(() => {
+      logViewport("MJPEG auto-retry", { source });
+      setMjpegFailed(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [mjpegFailed, useMjpegSetting, source]);
+
   const markMjpegFailed = useCallback((reason: string, details?: Record<string, unknown>) => {
     logViewport(`MJPEG failed (${reason}); switching to polling`, { clientId, source, fullscreen, ...details });
     setMjpegFailed(true);
