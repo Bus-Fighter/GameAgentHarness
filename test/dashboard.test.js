@@ -167,6 +167,7 @@ test("dashboard serves built React app and status", async (t) => {
   assert.equal(status.engineClients, 0);
   assert.equal(status.lastEngineAt, null);
   assert.equal(status.editorActive, false);
+  assert.equal(status.editorManaged, false);
   assert.equal(status.intakeUrl, "ws://127.0.0.1:18765");
   assert.equal(status.latestFrame, null);
 });
@@ -710,11 +711,13 @@ test("status reflects editorActive from editor-only events", async (t) => {
   assert.equal(status.kind, "status");
   assert.equal(status.engineClients, 1);
   assert.equal(status.editorActive, true);
+  assert.equal(status.editorManaged, false);
 
   engine.close();
   await dashboard.nextMessage("status");
   const statusAfter = await fetchJson("/api/status", DASHBOARD_PORT);
   assert.equal(statusAfter.editorActive, false);
+  assert.equal(statusAfter.editorManaged, false);
 
   dashboard.close();
 });

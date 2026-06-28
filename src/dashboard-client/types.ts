@@ -50,6 +50,7 @@ export interface StatusMessage {
   engineClients: number;
   lastEngineAt: string | null;
   editorActive: boolean;
+  editorManaged: boolean;
   intakeUrl: string;
   latestFrame: FrameMessage | null;
 }
@@ -155,6 +156,7 @@ export interface StatusResponse {
   engineClients: number;
   lastEngineAt: string | null;
   editorActive: boolean;
+  editorManaged: boolean;
   intakeUrl: string;
   latestFrame: FrameMessage | null;
 }

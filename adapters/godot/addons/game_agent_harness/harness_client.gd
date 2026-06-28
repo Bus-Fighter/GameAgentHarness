@@ -34,7 +34,9 @@ func _process(delta: float) -> void:
 		if not connected:
 			connected = true
 			_reconnect_timer = 0.0
-			send_event("engine.connected", {})
+			send_event("engine.connected", {
+				"engineMode": "editor" if Engine.is_editor_hint() else "runtime"
+			})
 			send_event("project.opened", {
 				"projectName": project_name,
 				"projectRoot": project_root

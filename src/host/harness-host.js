@@ -5,8 +5,9 @@ import { WebSocketServer } from "./websocket-server.js";
 import { encodeTextFrame } from "./websocket-codec.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
-import { findGodotBin, launchEditor, killProcess } from "../core/editor-launcher.js";
+import { findGodotBin } from "../core/editor-launcher.js";
 import { loadProfile } from "../core/profile.js";
+import { EditorManager } from "./editor-manager.js";
 import path from "node:path";
 
 export class HarnessHost {
@@ -26,9 +27,11 @@ export class HarnessHost {
     this.projectRoot = path.resolve(projectRoot);
     this.godotBin = godotBin || findGodotBin();
     this.profile = profilePath ? loadProfile(profilePath) : null;
-    this.editorProcess = null;
-    this.editorSockets = new Set();
-    this.editorActive = false;
+    this.editorManager = new EditorManager({
+      godotBin: this.godotBin,
+      projectRoot: this.projectRoot,
+      onChange: () => this.dashboard?.broadcastStatus(),
+    });
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
     this.server = new WebSocketServer({
@@ -48,7 +51,8 @@ export class HarnessHost {
           intakePort: this.port,
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
-          editorActive: () => this.editorActive,
+          editorActive: () => this.editorManager.isActive,
+          editorManaged: () => this.editorManager.isManaged,
           onControlMessage: (message) => this.handleDashboardControl(message),
           getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
           onFlushTrace: () => this.trace?.flush(),
@@ -126,11 +130,12 @@ export class HarnessHost {
     this.dashboard?.broadcastEvent(event);
     if (event.type === "engine.connected") {
       this.sendSignalSubscriptions(socket);
-    } else if (event.type === "plugin.enabled" || event.type === "editor.context") {
-      if (!this.editorSockets.has(socket)) {
-        this.editorSockets.add(socket);
-        this.updateEditorActive();
+      const data = event.data;
+      if (data?.engineMode === "editor") {
+        this.editorManager.markEditorSocket(socket);
       }
+    } else if (event.type === "plugin.enabled" || event.type === "editor.context") {
+      this.editorManager.markEditorSocket(socket);
     } else if (event.type === "runtime.started") {
       this.runtimeRunning = true;
       this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
@@ -143,15 +148,12 @@ export class HarnessHost {
 
   onEngineDisconnect(socket) {
     this.lastEngineAt = new Date().toISOString();
-    const wasEditor = this.editorSockets.delete(socket);
+    this.editorManager.unmarkSocket(socket);
     if (this.server.clients.size === 0) {
       if (this.runtimeRunning) {
         this.runtimeRunning = false;
         this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
       }
-    }
-    if (wasEditor) {
-      this.updateEditorActive();
     }
     this.dashboard?.broadcastStatus();
   }
@@ -216,6 +218,9 @@ export class HarnessHost {
     };
     this.frameStore.setFrame(frame);
     this.dashboard?.broadcastFrame(frame);
+    if (frame.source === "editor") {
+      this.editorManager.markEditorSocket(socket);
+    }
     if (frame.source === "runtime" && !this.runtimeRunning) {
       this.runtimeRunning = true;
       this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
@@ -248,53 +253,13 @@ export class HarnessHost {
   }
 
   handleLaunchEditor(message) {
-    const enabled = message.enabled !== false;
-    if (!enabled) {
-      if (this.editorProcess) {
-        console.log("[harness] closing Godot editor");
-        killProcess(this.editorProcess);
-        this.editorProcess = null;
-      }
-      if (this.editorActive) {
-        this.forwardControlToEngine({ action: "quit" });
-      }
-      this.updateEditorActive();
-      return;
-    }
-
-    if (this.editorProcess) {
-      console.log("[harness] restarting Godot editor");
-      killProcess(this.editorProcess);
-      this.editorProcess = null;
-    } else {
-      console.log("[harness] launching Godot editor");
-    }
-
-    try {
-      const process = launchEditor({ godotBin: this.godotBin, projectRoot: this.projectRoot });
-      this.editorProcess = process;
-      this.updateEditorActive();
-      process.on("exit", () => {
-        if (this.editorProcess === process) {
-          this.editorProcess = null;
-          this.updateEditorActive();
-        }
-      });
-      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, pid: process.pid });
-      this.dashboard?.broadcastStatus();
-    } catch (error) {
-      this.editorProcess = null;
-      this.updateEditorActive();
-      console.error(`[harness] launch editor failed: ${error.message}`);
-      this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: error.message });
-    }
-  }
-
-  updateEditorActive() {
-    const active = this.editorProcess != null || this.editorSockets.size > 0;
-    if (this.editorActive !== active) {
-      this.editorActive = active;
-      this.dashboard?.broadcastStatus();
+    const result = this.editorManager.handleLaunchControl(message, (control) =>
+      this.forwardControlToEngine(control),
+    );
+    if (!result.ok) {
+      this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: result.error });
+    } else if (!result.alreadyActive) {
+      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, managed: this.editorManager.isManaged });
     }
   }
 

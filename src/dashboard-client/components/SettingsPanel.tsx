@@ -1,4 +1,4 @@
-import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History, MousePointerClick } from "lucide-react";
+import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History, MousePointerClick, Info } from "lucide-react";
 import { ViewTransition } from "react";
 import type { DashboardSettings } from "../hooks/useSettings";
 
@@ -304,6 +304,22 @@ export function SettingsPanel({
                   >
                     <Plus className="h-4 w-4" />
                   </button>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
+                <Info className="h-4 w-4 text-[var(--accent)]" />
+                System info
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-[var(--text)]">
+                  <span className="text-[var(--muted)]">Version</span>
+                  <span className="font-mono">{__APP_VERSION__}</span>
+                </div>
+                <div className="flex justify-between text-[var(--text)]">
+                  <span className="text-[var(--muted)]">Built</span>
+                  <span>{new Date(__BUILD_DATE__).toLocaleString()}</span>
                 </div>
               </div>
             </div>

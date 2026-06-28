@@ -63,6 +63,7 @@ export default function App() {
   const [scenes, setScenes] = useState<string[]>([]);
   const [activeScene, setActiveScene] = useState<string | null>(null);
   const [editorActive, setEditorActive] = useState(false);
+  const [editorManaged, setEditorManaged] = useState(false);
 
   const {
     settings,
@@ -267,6 +268,7 @@ export default function App() {
               .then((s) => {
                 setStatus(s);
                 setEditorActive(s.editorActive);
+                setEditorManaged(s.editorManaged);
               })
               .catch(console.error);
           }
@@ -317,10 +319,12 @@ export default function App() {
             engineClients: msg.engineClients,
             lastEngineAt: msg.lastEngineAt,
             editorActive: msg.editorActive,
+            editorManaged: msg.editorManaged,
             intakeUrl: msg.intakeUrl,
             latestFrame: msg.latestFrame,
           });
           setEditorActive(msg.editorActive);
+          setEditorManaged(msg.editorManaged);
           if (msg.latestFrame) {
             if (msg.latestFrame.source === "editor") {
               setEditorFrame(msg.latestFrame);
@@ -635,6 +639,7 @@ export default function App() {
         captureEnabled={runtimeCaptureEnabled}
         paused={paused}
         editorActive={editorActive}
+        editorManaged={editorManaged}
         onRecord={handleRecord}
         onSnapshot={handleSnapshot}
         onPlay={handlePlay}

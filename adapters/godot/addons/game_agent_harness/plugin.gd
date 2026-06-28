@@ -31,6 +31,7 @@ var _SCENE_TREE_CACHE_TTL := 1.0
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 var _settings_dirty := false
 var _settings_save_timer := 0.0
+var _client_reported := false
 
 func _enter_tree() -> void:
 	client = ClientScript.new()
@@ -61,11 +62,17 @@ func _enter_tree() -> void:
 	_enable_file_logging()
 	_open_log_file()
 
-	client.send_event("plugin.enabled", {})
-	_emit_editor_context()
+	_report_editor_identity()
+	_client_reported = client.connected if client != null else false
 	set_process(true)
 
 func _process(delta: float) -> void:
+	if client != null and client.connected and not _client_reported:
+		_report_editor_identity()
+		_client_reported = true
+	elif client != null and not client.connected:
+		_client_reported = false
+
 	if _settings_dirty:
 		_settings_save_timer += delta
 		if _settings_save_timer >= SETTINGS_SAVE_DEBOUNCE:
@@ -286,6 +293,12 @@ func _update_dashboard_status() -> void:
 		dashboard_panel.set_status_text("Status: connected to harness")
 	else:
 		dashboard_panel.set_status_text("Status: disconnected")
+
+func _report_editor_identity() -> void:
+	if client == null:
+		return
+	client.send_event("plugin.enabled", {})
+	_emit_editor_context()
 
 func _emit_editor_context() -> void:
 	var edited_scene_root := get_editor_interface().get_edited_scene_root()

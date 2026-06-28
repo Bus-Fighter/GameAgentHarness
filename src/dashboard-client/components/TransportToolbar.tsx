@@ -15,6 +15,7 @@ interface TransportToolbarProps {
   captureEnabled: boolean;
   paused: boolean;
   editorActive?: boolean;
+  editorManaged?: boolean;
   onRecord: () => void;
   onSnapshot: () => void;
   onPlay: () => void;
@@ -31,6 +32,7 @@ export function TransportToolbar({
   captureEnabled,
   paused,
   editorActive,
+  editorManaged,
   onRecord,
   onSnapshot,
   onPlay,
@@ -42,6 +44,11 @@ export function TransportToolbar({
 }: TransportToolbarProps) {
   const recording = captureEnabled && runtimeRunning;
   const launchLabel = editorActive ? "Close Godot" : "Launch Godot";
+  const launchTitle = editorActive
+    ? editorManaged
+      ? "Close Godot (launched by dashboard)"
+      : "Close Godot (connected externally)"
+    : "Launch Godot";
 
   return (
     <nav
@@ -49,8 +56,16 @@ export function TransportToolbar({
       style={{ viewTransitionName: "persistent-toolbar" }}
     >
       {onLaunchEditor && (
-        <ToolbarButton onClick={onLaunchEditor} active={editorActive} label={launchLabel}>
-          <Monitor className="h-4.5 w-4.5" />
+        <ToolbarButton onClick={onLaunchEditor} active={editorActive} label={launchLabel} title={launchTitle}>
+          <span className="relative">
+            <Monitor className="h-4.5 w-4.5" />
+            {editorActive && editorManaged && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--accent)] ring-1 ring-[var(--surface)]" />
+            )}
+            {editorActive && !editorManaged && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--warning)] ring-1 ring-[var(--surface)]" />
+            )}
+          </span>
         </ToolbarButton>
       )}
       <ToolbarButton
@@ -107,6 +122,7 @@ interface ToolbarButtonProps {
   active?: boolean;
   danger?: boolean;
   label: string;
+  title?: string;
 }
 
 function ToolbarButton({
@@ -116,14 +132,15 @@ function ToolbarButton({
   active,
   danger,
   label,
+  title,
 }: ToolbarButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={label}
-      title={label}
+      aria-label={title || label}
+      title={title || label}
       className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1.5 rounded-full border px-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
         active
           ? danger

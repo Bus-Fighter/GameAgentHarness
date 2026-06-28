@@ -44,7 +44,7 @@ function serveFile(res, filePath, contentType) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, editorManaged = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -60,6 +60,7 @@ export class DashboardServer {
     this.engineClientCount = engineClientCount;
     this.lastEngineAt = lastEngineAt;
     this.editorActive = editorActive;
+    this.editorManaged = editorManaged;
     this.onControlMessage = onControlMessage;
     this.getRuntimeContext = getRuntimeContext;
     this.onFlushTrace = onFlushTrace;
@@ -77,6 +78,7 @@ export class DashboardServer {
       engineClients: this.engineClientCount?.() ?? 0,
       lastEngineAt: this.lastEngineAt?.() ?? null,
       editorActive: Boolean(this.editorActive?.()),
+      editorManaged: Boolean(this.editorManaged?.()),
       intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
       latestFrame: frame
         ? {
@@ -211,6 +213,7 @@ export class DashboardServer {
         engineClients: this.engineClientCount?.() ?? 0,
         lastEngineAt: this.lastEngineAt?.() ?? null,
         editorActive: Boolean(this.editorActive?.()),
+        editorManaged: Boolean(this.editorManaged?.()),
         intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
         latestFrame: frame
           ? {
