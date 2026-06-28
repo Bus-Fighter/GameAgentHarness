@@ -223,7 +223,7 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 	var viewport := get_viewport()
 	if viewport == null:
 		return
-	var size := viewport.get_visible_rect().size
+	var size: Vector2 = viewport.size
 	var pos := Vector2(nx * size.x, ny * size.y)
 
 	var event: InputEvent

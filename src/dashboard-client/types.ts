@@ -55,6 +55,26 @@ export interface StatusMessage {
   latestFrame: FrameMessage | null;
 }
 
+export interface HostErrorMessage {
+  kind: "host.error";
+  error: string;
+}
+
+export interface ControlResultMessage {
+  kind: "control.result";
+  ok: boolean;
+  error?: string;
+  traceId?: string | null;
+  traceActive?: boolean;
+}
+
+export interface EditorLaunchMessage {
+  kind: "editor.launch";
+  ok: boolean;
+  error?: string;
+  managed?: boolean;
+}
+
 export type WebSocketMessage =
   | FrameMessage
   | TraceMessage
@@ -62,6 +82,9 @@ export type WebSocketMessage =
   | ContextMessage
   | HelloMessage
   | StatusMessage
+  | HostErrorMessage
+  | ControlResultMessage
+  | EditorLaunchMessage
   | { kind: "pong" };
 
 export interface HarnessEvent {

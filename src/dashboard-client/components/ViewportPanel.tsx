@@ -29,6 +29,7 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [mjpegFailed, setMjpegFailed] = useState(false);
+  const [ripples, setRipples] = useState<Array<{ id: string; x: number; y: number }>>([]);
   const onPointerRef = useRef(onPointer);
   const clientId = useRef(generateClientId()).current;
   const imgNodeRef = useRef<HTMLImageElement | null>(null);
@@ -36,6 +37,22 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
   const prevUseMjpegSettingRef = useRef(useMjpegSetting);
 
   onPointerRef.current = onPointer;
+
+  const addRipple = useCallback((clientX: number, clientY: number) => {
+    const container = imgNodeRef.current?.parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const id = generateClientId();
+    const ripple = {
+      id,
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+    setRipples((prev) => [...prev, ripple]);
+    setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r.id !== id));
+    }, 550);
+  }, []);
 
   useEffect(() => {
     // Only re-enable MJPEG if the user toggled the setting back on.
@@ -80,13 +97,17 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       }, 2500);
     }
 
-    const makeHandler = (phase: string) => (e: Event) => {
+    const handleMouseDown = (e: Event) => {
+      const me = e as MouseEvent;
       e.preventDefault();
-      onPointerRef.current(phase, e as MouseEvent | TouchEvent);
+      addRipple(me.clientX, me.clientY);
+      onPointerRef.current("pressed", me);
     };
-
-    const handleMouseDown = makeHandler("pressed");
-    const handleMouseUp = makeHandler("released");
+    const handleMouseUp = (e: Event) => {
+      const me = e as MouseEvent;
+      e.preventDefault();
+      onPointerRef.current("released", me);
+    };
     const handleMouseMove = (e: Event) => {
       const me = e as MouseEvent;
       if (me.buttons > 0) {
@@ -94,9 +115,23 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
         onPointerRef.current("moved", me);
       }
     };
-    const handleTouchStart = makeHandler("pressed");
-    const handleTouchEnd = makeHandler("released");
-    const handleTouchMove = makeHandler("moved");
+    const handleTouchStart = (e: Event) => {
+      const te = e as TouchEvent;
+      e.preventDefault();
+      const touch = te.touches[0] || te.changedTouches[0];
+      if (touch) addRipple(touch.clientX, touch.clientY);
+      onPointerRef.current("pressed", te);
+    };
+    const handleTouchEnd = (e: Event) => {
+      const te = e as TouchEvent;
+      e.preventDefault();
+      onPointerRef.current("released", te);
+    };
+    const handleTouchMove = (e: Event) => {
+      const te = e as TouchEvent;
+      e.preventDefault();
+      onPointerRef.current("moved", te);
+    };
 
     node.addEventListener("mousedown", handleMouseDown, { passive: false });
     node.addEventListener("mouseup", handleMouseUp, { passive: false });
@@ -143,6 +178,17 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
           className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-none"
         />
       )}
+      {ripples.map((ripple) => (
+        <div
+          key={ripple.id}
+          className="pointer-events-none absolute h-6 w-6 rounded-full border-2 border-white/70 bg-white/30 shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+          style={{
+            left: ripple.x,
+            top: ripple.y,
+            animation: "ripple 500ms ease-out forwards",
+          }}
+        />
+      ))}
       {imgUrl && frame && (
         <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-wrap gap-1.5">
           <span className="rounded bg-[rgba(15,23,42,0.8)] px-2 py-0.5 text-[0.7rem] text-[var(--text)]">#{frame.seq}</span>

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, startTransition } from "react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { Header } from "./components/Header";
 import { MobileTabs } from "./components/MobileTabs";
 import { TabPanel } from "./components/TabPanel";
@@ -37,6 +38,19 @@ interface EvidenceItem {
   url: string;
 }
 
+interface Toast {
+  id: string;
+  type: "error" | "warning" | "success" | "info";
+  message: string;
+  createdAt: number;
+}
+
+interface PendingAction {
+  action: string;
+  startedAt: number;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("live");
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -64,6 +78,8 @@ export default function App() {
   const [activeScene, setActiveScene] = useState<string | null>(null);
   const [editorActive, setEditorActive] = useState(false);
   const [editorManaged, setEditorManaged] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const {
     settings,
@@ -90,12 +106,52 @@ export default function App() {
   const latestRuntimeFrameRef = useRef<FrameMessage | null>(null);
   const latestEditorFrameRef = useRef<FrameMessage | null>(null);
   const frameThrottleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingActionRef = useRef<PendingAction | null>(null);
   useEffect(() => {
     maxLogLinesRef.current = settings.maxLogLines;
   }, [settings.maxLogLines]);
   useEffect(() => {
     maxHistoryEntriesRef.current = settings.maxHistoryEntries;
   }, [settings.maxHistoryEntries]);
+
+  const addToast = useCallback((type: Toast["type"], message: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const toast: Toast = { id, type, message, createdAt: Date.now() };
+    setToasts((prev) => {
+      const next = [...prev, toast];
+      return next.slice(-3);
+    });
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 6000);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const clearPendingAction = useCallback(() => {
+    if (pendingActionRef.current) {
+      clearTimeout(pendingActionRef.current.timeoutId);
+      pendingActionRef.current = null;
+    }
+    setPendingAction(null);
+  }, []);
+
+  const setPending = useCallback(
+    (action: string, expectedMs: number = 5000) => {
+      clearPendingAction();
+      const timeoutId = setTimeout(() => {
+        addToast("warning", `${action} is taking longer than expected`);
+        setPendingAction(null);
+        pendingActionRef.current = null;
+      }, expectedMs);
+      const pending: PendingAction = { action, startedAt: Date.now(), timeoutId };
+      pendingActionRef.current = pending;
+      setPendingAction(pending);
+    },
+    [addToast, clearPendingAction],
+  );
 
   const handleTabChange = useCallback((tab: string) => {
     startTransition(() => {
@@ -150,6 +206,9 @@ export default function App() {
         const level = String(event.data?.level || "info");
         const message = String(event.data?.message || "");
         if (!message) return;
+        if (level === "error" || level === "warning") {
+          addToast(level === "error" ? "error" : "warning", message);
+        }
         setLogs((prev) => {
           const next = [
             ...prev,
@@ -172,13 +231,25 @@ export default function App() {
         const enabled = Boolean(event.data?.enabled);
         setRecordingPreference(enabled);
         setRuntimeCaptureEnabled(enabled && runtimeRunning);
+        if (pendingActionRef.current?.action === "Record") {
+          clearPendingAction();
+          addToast("success", enabled ? "Recording started" : "Recording stopped");
+        }
       }
       if (event.type === "pause.changed") {
         setPaused(Boolean(event.data?.enabled));
+        if (pendingActionRef.current?.action === "Pause" || pendingActionRef.current?.action === "Resume") {
+          clearPendingAction();
+          addToast("success", event.data?.enabled ? "Paused" : "Resumed");
+        }
       }
       if (event.type === "runtime.started") {
         setRuntimeRunning(true);
         setRuntimeCaptureEnabled(recordingPreference);
+        if (pendingActionRef.current?.action === "Play") {
+          clearPendingAction();
+          addToast("success", "Play mode started");
+        }
         const scene = event.data?.scene ? String(event.data.scene) : null;
         if (scene) {
           setContext((prev) => (prev ? { ...prev, scene } : ({ scene, runtime: { running: true } } as HarnessContext)));
@@ -188,6 +259,10 @@ export default function App() {
       if (event.type === "runtime.stopped") {
         setRuntimeRunning(false);
         setRuntimeCaptureEnabled(false);
+        if (pendingActionRef.current?.action === "Stop") {
+          clearPendingAction();
+          addToast("success", "Play mode stopped");
+        }
       }
       if (event.type === "scene.changed") {
         const data = event.data as Record<string, unknown> | undefined;
@@ -336,6 +411,21 @@ export default function App() {
         case "event":
           handleEvent(msg.event);
           break;
+        case "host.error":
+          addToast("error", msg.error);
+          break;
+        case "control.result":
+          if (!msg.ok && msg.error) {
+            addToast("error", msg.error);
+          }
+          break;
+        case "editor.launch":
+          if (!msg.ok && msg.error) {
+            addToast("error", msg.error);
+          } else if (msg.ok) {
+            addToast("success", msg.managed ? "Launched Godot" : "Godot connected");
+          }
+          break;
       }
     },
     [handleEvent, runtimeRunning],
@@ -472,32 +562,37 @@ export default function App() {
     const next = !recordingPreference;
     setRecordingPreference(next);
     setRuntimeCaptureEnabled(next);
+    setPending("Record");
     sendControl("runtime_capture", { enabled: next });
-  }, [runtimeRunning, recordingPreference, sendControl]);
+  }, [runtimeRunning, recordingPreference, sendControl, setPending]);
 
   const handleSnapshot = useCallback(() => {
     sendControl("snapshot");
   }, [sendControl]);
 
   const handlePlay = useCallback(() => {
+    setPending("Play", 10000);
     sendControl("play");
-  }, [sendControl]);
+  }, [sendControl, setPending]);
 
   const handlePause = useCallback(() => {
+    setPending(paused ? "Resume" : "Pause", 5000);
     sendControl("pause", { enabled: !paused });
-  }, [paused, sendControl]);
+  }, [paused, sendControl, setPending]);
 
   const handleStop = useCallback(() => {
+    setPending("Stop", 5000);
     sendControl("stop");
-  }, [sendControl]);
+  }, [sendControl, setPending]);
 
   const handleSceneChange = useCallback(
     (scene: string) => {
       if (!scene || scene === activeScene || scene === context?.scene) return;
       setActiveScene(scene);
+      setPending("Open Scene", 8000);
       sendControl("scene.open", { path: scene });
     },
-    [activeScene, context?.scene, sendControl],
+    [activeScene, context?.scene, sendControl, setPending],
   );
 
   const handleRefreshScenes = useCallback(() => {
@@ -505,8 +600,9 @@ export default function App() {
   }, [loadScenes]);
 
   const handleLaunchEditor = useCallback(() => {
+    setPending(editorActive ? "Close Godot" : "Launch Godot", 15000);
     sendControl("launch.editor", { enabled: !editorActive });
-  }, [editorActive, sendControl]);
+  }, [editorActive, sendControl, setPending]);
 
   const handleClearLogs = useCallback(() => {
     setLogs([]);
@@ -640,6 +736,7 @@ export default function App() {
         paused={paused}
         editorActive={editorActive}
         editorManaged={editorManaged}
+        pendingAction={pendingAction?.action || null}
         onRecord={handleRecord}
         onSnapshot={handleSnapshot}
         onPlay={handlePlay}
@@ -654,6 +751,44 @@ export default function App() {
           {error}
         </div>
       )}
+      <div className="fixed bottom-[calc(var(--tabs-h)+var(--toolbar-h)+36px)] left-1/2 z-[100] flex w-[min(480px,calc(100%-32px))] -translate-x-1/2 flex-col gap-2 lg:bottom-[calc(var(--toolbar-h)+36px)]">
+        {toasts.map((toast) => {
+          const Icon =
+            toast.type === "error"
+              ? AlertCircle
+              : toast.type === "warning"
+                ? AlertTriangle
+                : toast.type === "success"
+                  ? CheckCircle2
+                  : Info;
+          const colorClass =
+            toast.type === "error"
+              ? "border-red-400/30 bg-red-950/90 text-red-100 shadow-[0_4px_20px_rgba(239,68,68,0.25)]"
+              : toast.type === "warning"
+                ? "border-amber-400/30 bg-amber-950/90 text-amber-100 shadow-[0_4px_20px_rgba(245,158,11,0.25)]"
+                : toast.type === "success"
+                  ? "border-emerald-400/30 bg-emerald-950/90 text-emerald-100 shadow-[0_4px_20px_rgba(34,197,94,0.25)]"
+                  : "border-blue-400/30 bg-blue-950/90 text-blue-100 shadow-[0_4px_20px_rgba(59,130,246,0.25)]";
+          return (
+            <div
+              key={toast.id}
+              className={`relative flex items-start gap-3 overflow-hidden rounded-xl border px-4 py-3 text-sm backdrop-blur ${colorClass}`}
+            >
+              <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span className="flex-1 leading-relaxed">{toast.message}</span>
+              <button
+                type="button"
+                onClick={() => removeToast(toast.id)}
+                className="flex-shrink-0 rounded p-0.5 opacity-70 transition-opacity hover:opacity-100"
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <div className="absolute bottom-0 left-0 h-0.5 bg-white/40 animate-[shrink_6s_linear_forwards]" style={{ width: "100%" }} />
+            </div>
+          );
+        })}
+      </div>
       <SettingsPanel
         open={settingsOpen}
         onClose={() => startTransition(() => setSettingsOpen(false))}

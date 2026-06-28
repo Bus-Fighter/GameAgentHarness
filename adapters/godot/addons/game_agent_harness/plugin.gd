@@ -175,10 +175,22 @@ func _log_warning(message: String) -> void:
 func _log_error(message: String) -> void:
 	_log("error", message)
 
+func _send_engine_log(level: String, message: String) -> void:
+	if client != null:
+		client.send_event("engine.log", { "level": level, "message": message })
+
+func _send_engine_error(message: String) -> void:
+	_send_engine_log("error", message)
+	_log_error(message)
+
 func _on_harness_control(message: Dictionary) -> void:
 	var action := str(message.get("action", ""))
 	_log_debug("plugin received control: %s" % action)
 	if action == "play":
+		var edited_root := get_editor_interface().get_edited_scene_root()
+		if edited_root == null:
+			_send_engine_error("Cannot play: no scene is currently open in the editor.")
+			return
 		get_editor_interface().play_current_scene()
 		_send_history("dashboard", "play", {})
 	elif action == "stop":
@@ -220,10 +232,15 @@ func _on_harness_control(message: Dictionary) -> void:
 		_set_log_level(str(message.get("level", _log_level)))
 	elif action == "scene.open":
 		var open_path := str(message.get("path", ""))
-		if not open_path.is_empty():
-			var res_path := open_path if open_path.begins_with("res://") else "res://" + open_path.replace("\\", "/")
-			get_editor_interface().open_scene_from_path(res_path)
-			_send_history("dashboard", "scene.open", { "path": open_path })
+		if open_path.is_empty():
+			_send_engine_error("Cannot open scene: path is empty.")
+			return
+		var res_path := open_path if open_path.begins_with("res://") else "res://" + open_path.replace("\\", "/")
+		if not FileAccess.file_exists(res_path):
+			_send_engine_error("Cannot open scene: file not found: %s" % res_path)
+			return
+		get_editor_interface().open_scene_from_path(res_path)
+		_send_history("dashboard", "scene.open", { "path": open_path })
 	elif action == "quit":
 		get_tree().quit()
 		_send_history("dashboard", "quit", {})
@@ -322,13 +339,23 @@ func _enable_file_logging() -> void:
 		log_path = "user://logs/godot.log"
 		ProjectSettings.set_setting("debug/file_logging/log_path", log_path)
 		changed = true
-	_log_file_path = ProjectSettings.globalize_path(log_path)
+	_log_file_path = _resolve_log_path(log_path)
 	if changed:
 		ProjectSettings.save()
+
+func _resolve_log_path(log_path: String) -> String:
+	if log_path.begins_with("user://"):
+		var user_dir := OS.get_user_data_dir()
+		var relative := log_path.trim_prefix("user://")
+		return user_dir.path_join(relative).simplify_path()
+	return ProjectSettings.globalize_path(log_path).simplify_path()
 
 func _open_log_file() -> void:
 	if _log_file_path.is_empty():
 		return
+	var dir := _log_file_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
 	if not FileAccess.file_exists(_log_file_path):
 		return
 	_log_file = FileAccess.open(_log_file_path, FileAccess.READ)
@@ -338,14 +365,17 @@ func _open_log_file() -> void:
 
 func _tail_log_file() -> void:
 	if _log_file == null:
-		if FileAccess.file_exists(_log_file_path):
-			_open_log_file()
+		_open_log_file()
 		return
 	if _log_file.get_error() != OK:
 		_log_file = null
 		_open_log_file()
 		return
 	var current_length := _log_file.get_length()
+	if current_length < _last_log_length:
+		_log_file = null
+		_open_log_file()
+		return
 	if current_length == _last_log_length:
 		return
 	_last_log_length = current_length

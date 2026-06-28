@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Trash2,
   Monitor,
+  Loader2,
 } from "lucide-react";
 
 interface TransportToolbarProps {
@@ -16,6 +17,7 @@ interface TransportToolbarProps {
   paused: boolean;
   editorActive?: boolean;
   editorManaged?: boolean;
+  pendingAction: string | null;
   onRecord: () => void;
   onSnapshot: () => void;
   onPlay: () => void;
@@ -33,6 +35,7 @@ export function TransportToolbar({
   paused,
   editorActive,
   editorManaged,
+  pendingAction,
   onRecord,
   onSnapshot,
   onPlay,
@@ -70,8 +73,9 @@ export function TransportToolbar({
       )}
       <ToolbarButton
         onClick={onRecord}
-        disabled={!runtimeRunning}
+        disabled={!runtimeRunning || pendingAction === "Record"}
         active={recording}
+        pending={pendingAction === "Record"}
         label="Record"
         danger={recording}
       >
@@ -83,23 +87,26 @@ export function TransportToolbar({
       <div className="mx-1 h-7 w-px bg-[var(--border)]" />
       <ToolbarButton
         onClick={onPlay}
-        disabled={!engineConnected || runtimeRunning}
+        disabled={!engineConnected || runtimeRunning || pendingAction === "Play"}
         active={runtimeRunning}
+        pending={pendingAction === "Play"}
         label="Play"
       >
         <Play className="h-4.5 w-4.5 fill-current" />
       </ToolbarButton>
       <ToolbarButton
         onClick={onPause}
-        disabled={!runtimeRunning}
+        disabled={!runtimeRunning || pendingAction === "Pause" || pendingAction === "Resume"}
         active={paused}
+        pending={pendingAction === "Pause" || pendingAction === "Resume"}
         label={paused ? "Resume" : "Pause"}
       >
         <Pause className="h-4.5 w-4.5 fill-current" />
       </ToolbarButton>
       <ToolbarButton
         onClick={onStop}
-        disabled={!engineConnected || !runtimeRunning}
+        disabled={!engineConnected || !runtimeRunning || pendingAction === "Stop"}
+        pending={pendingAction === "Stop"}
         label="Stop"
       >
         <Square className="h-4.5 w-4.5 rounded-sm fill-current" />
@@ -120,6 +127,7 @@ interface ToolbarButtonProps {
   onClick: () => void;
   disabled?: boolean;
   active?: boolean;
+  pending?: boolean;
   danger?: boolean;
   label: string;
   title?: string;
@@ -130,6 +138,7 @@ function ToolbarButton({
   onClick,
   disabled,
   active,
+  pending,
   danger,
   label,
   title,
@@ -149,7 +158,7 @@ function ToolbarButton({
           : "border-transparent bg-transparent text-[var(--muted)] hover:border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
       }`}
     >
-      {children}
+      {pending ? <Loader2 className="h-4.5 w-4.5 animate-spin" /> : children}
       <span className="hidden pr-1.5 sm:inline">{label}</span>
     </button>
   );
