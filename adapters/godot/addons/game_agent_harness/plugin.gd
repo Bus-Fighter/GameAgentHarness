@@ -3,13 +3,16 @@ extends EditorPlugin
 
 const ClientScript := preload("res://addons/game_agent_harness/harness_client.gd")
 const DashboardPanelScript := preload("res://addons/game_agent_harness/editor_dashboard_panel.gd")
+const DashboardActionsScript := preload("res://addons/game_agent_harness/dashboard_actions.gd")
 const RuntimeAutoloadName := "GameAgentHarnessRuntime"
 const RuntimeAutoloadPath := "res://addons/game_agent_harness/runtime_recorder.gd"
+const DashboardActionsName := "GameAgentHarnessDashboardActions"
 const SETTINGS_SAVE_DEBOUNCE := 1.0
 
 var client: GameAgentHarnessClient
 var editor_selection: EditorSelection
 var dashboard_panel: GameAgentHarnessDashboardPanel
+var dashboard_actions: GameAgentHarnessDashboardActions
 var _runtime_running := false
 var _log_file: FileAccess = null
 var _log_file_path := ""
@@ -37,6 +40,11 @@ func _enter_tree() -> void:
 	client = ClientScript.new()
 	client.name = "GameAgentHarnessEditorClient"
 	add_child(client)
+
+	dashboard_actions = DashboardActionsScript.new()
+	dashboard_actions.name = DashboardActionsName
+	dashboard_actions.set_client(client)
+	get_tree().root.call_deferred("add_child", dashboard_actions)
 
 	_inspector_enabled = ProjectSettings.get_setting("game_agent_harness/inspector_enabled", true)
 	_signals_enabled = ProjectSettings.get_setting("game_agent_harness/signals_enabled", true)
@@ -120,6 +128,12 @@ func _exit_tree() -> void:
 		remove_control_from_docks(dashboard_panel)
 		dashboard_panel.queue_free()
 		dashboard_panel = null
+
+	if dashboard_actions != null:
+		if dashboard_actions.is_inside_tree():
+			dashboard_actions.get_parent().remove_child(dashboard_actions)
+		dashboard_actions.queue_free()
+		dashboard_actions = null
 
 	if client != null:
 		client.send_event("plugin.disabled", {})
@@ -264,6 +278,22 @@ func _on_harness_control(message: Dictionary) -> void:
 	elif action == "resource.import_settings":
 		var import_path := str(message.get("path", ""))
 		_send_resource_import_settings(import_path)
+	elif action == "dashboard.action":
+		var action_id := str(message.get("id", ""))
+		if dashboard_actions == null:
+			_send_engine_error("Dashboard actions registry is not available.")
+			return
+		var result := dashboard_actions.invoke(action_id)
+		var ok := bool(result.get("ok", false))
+		var result_message := str(result.get("message", ""))
+		client.send_event("dashboard.action.completed", {
+			"id": action_id,
+			"ok": ok,
+			"message": result_message
+		})
+		_send_history("dashboard", "dashboard.action", { "id": action_id, "ok": ok })
+		if not ok:
+			_send_engine_error(result_message)
 	elif action == "snapshot" or action == "pause" or action == "input.pointer":
 		# Forwarded to runtime autoload when available
 		var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
@@ -315,6 +345,8 @@ func _report_editor_identity() -> void:
 	if client == null:
 		return
 	client.send_event("plugin.enabled", {})
+	if dashboard_actions != null:
+		dashboard_actions._notify_dashboard()
 	_emit_editor_context()
 
 func _emit_editor_context() -> void:

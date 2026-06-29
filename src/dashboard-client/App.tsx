@@ -12,6 +12,7 @@ import { TransportToolbar } from "./components/TransportToolbar";
 import { FileReviewPanel } from "./components/FileReviewPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { InspectPanel } from "./components/InspectPanel";
+import { ActionsPanel, type DashboardAction } from "./components/ActionsPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSettings } from "./hooks/useSettings";
 import { fetchStatus, fetchScenes } from "./api";
@@ -80,6 +81,8 @@ export default function App() {
   const [editorManaged, setEditorManaged] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [dashboardActions, setDashboardActions] = useState<DashboardAction[]>([]);
+  const [pendingDashboardAction, setPendingDashboardAction] = useState<string | null>(null);
 
   const {
     settings,
@@ -339,6 +342,19 @@ export default function App() {
           ];
           return next.slice(-maxHistoryEntriesRef.current);
         });
+      }
+      if (event.type === "dashboard.actions") {
+        const actions = (event.data?.actions as DashboardAction[]) ?? [];
+        setDashboardActions(actions);
+      }
+      if (event.type === "dashboard.action.completed") {
+        const data = event.data as Record<string, unknown> | undefined;
+        const ok = Boolean(data?.ok);
+        const message = String(data?.message || "");
+        setPendingDashboardAction(null);
+        if (message) {
+          addToast(ok ? "success" : "error", message);
+        }
       }
     },
     [traceId, runtimeRunning, recordingPreference],
@@ -620,6 +636,14 @@ export default function App() {
     sendControl("launch.editor", { enabled: !editorActive });
   }, [editorActive, sendControl, setPending]);
 
+  const handleDashboardAction = useCallback(
+    (id: string) => {
+      setPendingDashboardAction(id);
+      sendControl("dashboard.action", { id });
+    },
+    [sendControl],
+  );
+
   const handleClearLogs = useCallback(() => {
     setLogs([]);
   }, []);
@@ -684,6 +708,12 @@ export default function App() {
                 useMjpeg={settings.useMjpeg}
                 onSourceChange={setViewportSource}
                 onPointer={handlePointer}
+              />
+              <ActionsPanel
+                actions={dashboardActions}
+                pendingId={pendingDashboardAction}
+                engineConnected={engineConnected}
+                onAction={handleDashboardAction}
               />
               <SceneCard
                 context={context}
