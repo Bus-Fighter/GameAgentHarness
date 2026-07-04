@@ -6,8 +6,6 @@ import {
   Square,
   RefreshCw,
   Trash2,
-  Monitor,
-  Loader2,
 } from "lucide-react";
 
 interface TransportToolbarProps {
@@ -15,9 +13,6 @@ interface TransportToolbarProps {
   engineConnected: boolean;
   captureEnabled: boolean;
   paused: boolean;
-  editorActive?: boolean;
-  editorManaged?: boolean;
-  pendingAction: string | null;
   onRecord: () => void;
   onSnapshot: () => void;
   onPlay: () => void;
@@ -25,7 +20,6 @@ interface TransportToolbarProps {
   onStop: () => void;
   onReconnect: () => void;
   onClearEvidence: () => void;
-  onLaunchEditor?: () => void;
 }
 
 export function TransportToolbar({
@@ -33,9 +27,6 @@ export function TransportToolbar({
   engineConnected,
   captureEnabled,
   paused,
-  editorActive,
-  editorManaged,
-  pendingAction,
   onRecord,
   onSnapshot,
   onPlay,
@@ -43,39 +34,18 @@ export function TransportToolbar({
   onStop,
   onReconnect,
   onClearEvidence,
-  onLaunchEditor,
 }: TransportToolbarProps) {
   const recording = captureEnabled && runtimeRunning;
-  const launchLabel = editorActive ? "Close Godot" : "Launch Godot";
-  const launchTitle = editorActive
-    ? editorManaged
-      ? "Close Godot (launched by dashboard)"
-      : "Close Godot (connected externally)"
-    : "Launch Godot";
 
   return (
     <nav
       className="fixed bottom-[calc(var(--tabs-h)+12px)] left-1/2 z-50 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[var(--border)] bg-[rgba(15,23,42,0.96)] p-1.5 shadow-lg backdrop-blur lg:bottom-3"
       style={{ viewTransitionName: "persistent-toolbar" }}
     >
-      {onLaunchEditor && (
-        <ToolbarButton onClick={onLaunchEditor} active={editorActive} label={launchLabel} title={launchTitle}>
-          <span className="relative">
-            <Monitor className="h-4.5 w-4.5" />
-            {editorActive && editorManaged && (
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--accent)] ring-1 ring-[var(--surface)]" />
-            )}
-            {editorActive && !editorManaged && (
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--warning)] ring-1 ring-[var(--surface)]" />
-            )}
-          </span>
-        </ToolbarButton>
-      )}
       <ToolbarButton
         onClick={onRecord}
-        disabled={!runtimeRunning || pendingAction === "Record"}
+        disabled={!runtimeRunning}
         active={recording}
-        pending={pendingAction === "Record"}
         label="Record"
         danger={recording}
       >
@@ -87,26 +57,23 @@ export function TransportToolbar({
       <div className="mx-1 h-7 w-px bg-[var(--border)]" />
       <ToolbarButton
         onClick={onPlay}
-        disabled={!engineConnected || runtimeRunning || pendingAction === "Play"}
+        disabled={!engineConnected || runtimeRunning}
         active={runtimeRunning}
-        pending={pendingAction === "Play"}
         label="Play"
       >
         <Play className="h-4.5 w-4.5 fill-current" />
       </ToolbarButton>
       <ToolbarButton
         onClick={onPause}
-        disabled={!runtimeRunning || pendingAction === "Pause" || pendingAction === "Resume"}
+        disabled={!runtimeRunning}
         active={paused}
-        pending={pendingAction === "Pause" || pendingAction === "Resume"}
         label={paused ? "Resume" : "Pause"}
       >
         <Pause className="h-4.5 w-4.5 fill-current" />
       </ToolbarButton>
       <ToolbarButton
         onClick={onStop}
-        disabled={!engineConnected || !runtimeRunning || pendingAction === "Stop"}
-        pending={pendingAction === "Stop"}
+        disabled={!engineConnected || !runtimeRunning}
         label="Stop"
       >
         <Square className="h-4.5 w-4.5 rounded-sm fill-current" />
@@ -127,10 +94,8 @@ interface ToolbarButtonProps {
   onClick: () => void;
   disabled?: boolean;
   active?: boolean;
-  pending?: boolean;
   danger?: boolean;
   label: string;
-  title?: string;
 }
 
 function ToolbarButton({
@@ -138,18 +103,16 @@ function ToolbarButton({
   onClick,
   disabled,
   active,
-  pending,
   danger,
   label,
-  title,
 }: ToolbarButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={title || label}
-      title={title || label}
+      aria-label={label}
+      title={label}
       className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-1.5 rounded-full border px-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
         active
           ? danger
@@ -158,7 +121,7 @@ function ToolbarButton({
           : "border-transparent bg-transparent text-[var(--muted)] hover:border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
       }`}
     >
-      {pending ? <Loader2 className="h-4.5 w-4.5 animate-spin" /> : children}
+      {children}
       <span className="hidden pr-1.5 sm:inline">{label}</span>
     </button>
   );

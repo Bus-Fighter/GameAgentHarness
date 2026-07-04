@@ -91,16 +91,17 @@ var _last_frame_hash: int = 0
 var _last_frame_hash_count: int = 0
 var _last_image_sample_hash: int = 0
 
-func send_frame(image: Image, source: String = "viewport", persist: bool = false, force: bool = false) -> void:
+func send_frame(image: Image, source: String = "viewport", persist: bool = false, force: bool = false, max_dimension: int = -1, quality: float = -1.0) -> void:
 	if image == null:
 		return
 	var sample_hash := _hash_image_samples(image)
 	if _deduplicate_frames and not force and not persist and sample_hash == _last_image_sample_hash:
 		return
 	_last_image_sample_hash = sample_hash
-	var resized := _resize_image(image)
-	var quality: float = float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
-	var buffer := resized.save_jpg_to_buffer(quality)
+	var limit := max_dimension if max_dimension > 0 else int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
+	var resized := _resize_image(image, limit)
+	var q := quality if quality >= 0.0 else float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
+	var buffer := resized.save_jpg_to_buffer(q)
 	if buffer.size() == 0:
 		return
 
@@ -157,9 +158,10 @@ func _hash_image_samples(image: Image) -> int:
 		h_out = (h_out * 31 + color.to_rgba32()) & 0x7FFFFFFF
 	return h_out
 
-func _resize_image(image: Image) -> Image:
+func _resize_image(image: Image, limit: int = -1) -> Image:
 	var max_dim := max(image.get_width(), image.get_height())
-	var limit := int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
+	if limit <= 0:
+		limit = int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
 	if limit <= 0 or max_dim <= limit:
 		return image
 	var scale: float = float(limit) / float(max_dim)
@@ -171,12 +173,10 @@ func _resize_image(image: Image) -> Image:
 
 func send_message(message: Dictionary) -> void:
 	var text := JSON.stringify(message)
-	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.send_text(text)
-	else:
-		queue.append(text)
-		if queue.size() > 512:
-			queue.pop_front()
+	queue.append(text)
+	if queue.size() > 512:
+		queue.pop_front()
+	_flush_queue()
 
 func _receive_messages() -> void:
 	while socket.get_available_packet_count() > 0:
@@ -228,7 +228,14 @@ func _set_capture_enabled(key: String, enabled: bool) -> void:
 
 func _flush_queue() -> void:
 	while queue.size() > 0 and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.send_text(queue.pop_front())
+		var text := queue[0]
+		var err := socket.send_text(text)
+		if err != OK:
+			if err == ERR_OUT_OF_MEMORY:
+				# Outbound buffer is full; back off and retry next frame.
+				break
+			_log_warning("websocket send error %d, dropping message" % err)
+		queue.pop_front()
 
 func _detect_project_name() -> String:
 	var configured := str(ProjectSettings.get_setting("application/config/name", ""))

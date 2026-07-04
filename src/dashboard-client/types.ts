@@ -1,3 +1,17 @@
+export interface HarnessDockInfo {
+  id: string;
+  title: string;
+  visible?: boolean;
+}
+
+export interface EditorDocksMessage {
+  kind: "event";
+  event: {
+    type: "editor.docks";
+    data: { docks: HarnessDockInfo[] };
+  };
+}
+
 export interface FrameMessage {
   kind: "frame";
   seq: number;
@@ -23,56 +37,9 @@ export interface ContextMessage {
   context: HarnessContext;
 }
 
-export interface SignalSubscription {
-  match: {
-    nodeClass?: string;
-    nodeName?: string;
-    nodePath?: string;
-  };
-  signal: string;
-  eventType: string;
-  argMapping: (string | { name: string } | Record<string, unknown>)[];
-}
-
 export interface HelloMessage {
   kind: "hello";
   traceId: string | null;
-  signalSubscriptions: SignalSubscription[];
-}
-
-export interface StatusMessage {
-  kind: "status";
-  traceActive: boolean;
-  traceId: string | null;
-  dashboardClients: number;
-  dashboardWsClients: number;
-  dashboardSseClients: number;
-  engineClients: number;
-  lastEngineAt: string | null;
-  editorActive: boolean;
-  editorManaged: boolean;
-  intakeUrl: string;
-  latestFrame: FrameMessage | null;
-}
-
-export interface HostErrorMessage {
-  kind: "host.error";
-  error: string;
-}
-
-export interface ControlResultMessage {
-  kind: "control.result";
-  ok: boolean;
-  error?: string;
-  traceId?: string | null;
-  traceActive?: boolean;
-}
-
-export interface EditorLaunchMessage {
-  kind: "editor.launch";
-  ok: boolean;
-  error?: string;
-  managed?: boolean;
 }
 
 export type WebSocketMessage =
@@ -81,10 +48,6 @@ export type WebSocketMessage =
   | EventMessage
   | ContextMessage
   | HelloMessage
-  | StatusMessage
-  | HostErrorMessage
-  | ControlResultMessage
-  | EditorLaunchMessage
   | { kind: "pong" };
 
 export interface HarnessEvent {
@@ -178,8 +141,6 @@ export interface StatusResponse {
   dashboardSseClients: number;
   engineClients: number;
   lastEngineAt: string | null;
-  editorActive: boolean;
-  editorManaged: boolean;
   intakeUrl: string;
   latestFrame: FrameMessage | null;
 }

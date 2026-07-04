@@ -7,6 +7,15 @@ const RuntimeAutoloadName := "GameAgentHarnessRuntime"
 const RuntimeAutoloadPath := "res://addons/game_agent_harness/runtime_recorder.gd"
 const SETTINGS_SAVE_DEBOUNCE := 1.0
 
+const DOCK_DEFINITIONS := [
+	{ "id": "filesystem", "title": "FileSystem", "classes": ["FileSystemDock"] },
+	{ "id": "scene", "title": "Scene", "classes": ["SceneTreeDock"] },
+	{ "id": "inspector", "title": "Inspector", "classes": ["InspectorDock"] },
+	{ "id": "import", "title": "Import", "classes": ["ImportDock"] },
+	{ "id": "node", "title": "Node", "classes": ["NodeDock"] },
+	{ "id": "history", "title": "History", "classes": ["HistoryDock", "EditorHistoryDock"] },
+]
+
 var client: GameAgentHarnessClient
 var editor_selection: EditorSelection
 var dashboard_panel: GameAgentHarnessDashboardPanel
@@ -32,6 +41,10 @@ var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 var _settings_dirty := false
 var _settings_save_timer := 0.0
 var _client_reported := false
+var _dock_streams: Dictionary = {}
+var _dock_max_streams := 4
+var _dock_root_image: Image = null
+var _dock_root_dirty := false
 
 func _enter_tree() -> void:
 	client = ClientScript.new()
@@ -90,6 +103,8 @@ func _process(delta: float) -> void:
 		if _editor_viewport_timer >= _editor_viewport_interval:
 			_editor_viewport_timer = 0.0
 			_send_editor_viewport_frame()
+
+	_process_dock_streams(delta)
 
 	var playing := get_editor_interface().is_playing_scene()
 	if playing == _runtime_running:
@@ -244,6 +259,11 @@ func _on_harness_control(message: Dictionary) -> void:
 	elif action == "quit":
 		get_tree().quit()
 		_send_history("dashboard", "quit", {})
+	elif action == "fs.refresh":
+		var fs := get_editor_interface().get_resource_filesystem()
+		if fs != null:
+			fs.scan()
+		_send_history("dashboard", "fs.refresh", { "path": str(message.get("path", "")) })
 	elif action == "scene.tree":
 		_send_scene_tree()
 	elif action == "inspector.query":
@@ -264,6 +284,26 @@ func _on_harness_control(message: Dictionary) -> void:
 	elif action == "resource.import_settings":
 		var import_path := str(message.get("path", ""))
 		_send_resource_import_settings(import_path)
+	elif action == "dock_stream":
+		var dock_id := str(message.get("dock", ""))
+		if dock_id.is_empty():
+			return
+		var enabled := bool(message.get("enabled", false))
+		var interval := clampf(float(message.get("interval", 0.5)), 0.05, 2.0)
+		var tab := str(message.get("tab", ""))
+		if not _dock_streams.has(dock_id):
+			_dock_streams[dock_id] = { "enabled": false, "interval": 0.5, "timer": 0.0, "tab": "" }
+		var s: Dictionary = _dock_streams[dock_id]
+		s.enabled = enabled
+		s.interval = interval
+		s.tab = tab
+		if enabled:
+			s.timer = 0.0
+		_send_history("dashboard", "dock_stream", { "dock": dock_id, "enabled": enabled, "interval": interval, "tab": tab })
+	elif action == "docks.refresh":
+		_send_dock_list()
+	elif action == "input.editor_pointer":
+		_forward_editor_pointer(message)
 	elif action == "snapshot" or action == "pause" or action == "input.pointer":
 		# Forwarded to runtime autoload when available
 		var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
@@ -316,6 +356,7 @@ func _report_editor_identity() -> void:
 		return
 	client.send_event("plugin.enabled", {})
 	_emit_editor_context()
+	_send_dock_list()
 
 func _emit_editor_context() -> void:
 	var edited_scene_root := get_editor_interface().get_edited_scene_root()
@@ -423,6 +464,187 @@ func _capture_editor_viewport() -> Image:
 	if texture == null:
 		return null
 	return texture.get_image()
+
+func _process_dock_streams(delta: float) -> void:
+	var due_ids: Array[String] = []
+	for id in _dock_streams:
+		var s: Dictionary = _dock_streams[id]
+		if not s.enabled:
+			continue
+		s.timer += delta
+		if s.timer >= s.interval:
+			s.timer = 0.0
+			due_ids.append(id)
+	if due_ids.is_empty():
+		return
+	var enabled_count := 0
+	for id in _dock_streams:
+		if _dock_streams[id].enabled:
+			enabled_count += 1
+	if enabled_count > _dock_max_streams:
+		_log_warning("too many dock streams enabled (%d > %d); extra docks will be skipped" % [enabled_count, _dock_max_streams])
+	var full := _capture_editor_root()
+	if full == null:
+		_log_debug("dock stream capture: editor root viewport is null")
+		return
+	for id in due_ids:
+		var s: Dictionary = _dock_streams[id]
+		var dock := _resolve_dock(id)
+		if dock == null:
+			_log_debug("dock stream capture: dock %s not found" % id)
+			continue
+		if not _ensure_dock_visible(dock, s.get("tab", "")):
+			_log_debug("dock stream capture: dock %s is not visible" % id)
+			continue
+		var cropped := _crop_dock(full, dock)
+		if cropped == null:
+			_log_debug("dock stream capture: crop failed for dock %s" % id)
+			continue
+		client.send_frame(cropped, "dock:%s" % id, false, false, _dock_max_dimension(), _dock_quality())
+
+func _dock_max_dimension() -> int:
+	return int(ProjectSettings.get_setting("game_agent_harness/dock_max_frame_dimension", 320))
+
+func _dock_quality() -> float:
+	return float(ProjectSettings.get_setting("game_agent_harness/dock_frame_quality", 0.5))
+
+func _resolve_dock(id: String) -> Control:
+	for def in DOCK_DEFINITIONS:
+		if def.id != id:
+			continue
+		var ei := get_editor_interface()
+		# Try known public getters first.
+		match id:
+			"filesystem":
+				var dock = ei.get_file_system_dock()
+				if dock != null and dock is Control:
+					return dock as Control
+			"inspector":
+				if ei.has_method("get_inspector_dock"):
+					var dock = ei.call("get_inspector_dock")
+					if dock != null and dock is Control:
+						return dock as Control
+		# Fall back to class-name search inside the editor base control.
+		var base := ei.get_base_control()
+		if base == null:
+			return null
+		for cls_name in def.classes:
+			var found := base.find_children("*", cls_name, true, false)
+			if found.size() > 0 and found[0] is Control:
+				return found[0] as Control
+	return null
+
+func _ensure_dock_visible(dock: Control, tab_title: String = "") -> bool:
+	if not dock.visible:
+		# Walk up to a TabContainer and switch to this dock's tab.
+		var node := dock.get_parent()
+		while node != null:
+			if node is TabContainer:
+				var tc := node as TabContainer
+				for i in range(tc.get_tab_count()):
+					var child := tc.get_tab_control(i)
+					if child == dock or (not tab_title.is_empty() and tc.get_tab_title(i) == tab_title):
+						tc.current_tab = i
+						return dock.visible
+				break
+			node = node.get_parent()
+	return dock.visible
+
+func _capture_editor_root() -> Image:
+	var base := get_editor_interface().get_base_control()
+	if base == null:
+		return null
+	var vp := base.get_viewport()
+	if vp == null:
+		return null
+	var tex := vp.get_texture()
+	if tex == null:
+		return null
+	return tex.get_image()
+
+func _crop_dock(full: Image, dock: Control) -> Image:
+	var rect := dock.get_global_rect()
+	var x := int(rect.position.x)
+	var y := int(rect.position.y)
+	var w := int(rect.size.x)
+	var h := int(rect.size.y)
+	var fw := full.get_width()
+	var fh := full.get_height()
+	if x < 0:
+		x = 0
+	if y < 0:
+		y = 0
+	if x + w > fw:
+		w = fw - x
+	if y + h > fh:
+		h = fh - y
+	if w <= 0 or h <= 0:
+		return null
+	return full.get_region(Rect2i(x, y, w, h))
+
+func _send_dock_list() -> void:
+	if client == null:
+		return
+	var list: Array[Dictionary] = []
+	for def in DOCK_DEFINITIONS:
+		var dock := _resolve_dock(def.id)
+		if dock == null:
+			continue
+		list.append({
+			"id": def.id,
+			"title": def.title,
+			"visible": dock.visible,
+		})
+	client.send_event("editor.docks", { "docks": list })
+
+func _forward_editor_pointer(message: Dictionary) -> void:
+	var dock_id := str(message.get("dock", ""))
+	var dock := _resolve_dock(dock_id)
+	if dock == null:
+		return
+	var phase := str(message.get("phase", ""))
+	var x := clampf(float(message.get("x", 0.0)), 0.0, 1.0)
+	var y := clampf(float(message.get("y", 0.0)), 0.0, 1.0)
+	var button := int(message.get("button", 0))
+	var modifiers := message.get("modifiers", {}) as Dictionary
+	var rect := dock.get_global_rect()
+	var point := rect.position + Vector2(x * rect.size.x, y * rect.size.y)
+	var base := get_editor_interface().get_base_control()
+	var vp := base.get_viewport()
+	if vp == null:
+		return
+	if phase == "moved":
+		var ev := InputEventMouseMotion.new()
+		ev.position = point
+		ev.global_position = point
+		ev.button_mask = button
+		ev.ctrl_pressed = bool(modifiers.get("ctrl", false))
+		ev.shift_pressed = bool(modifiers.get("shift", false))
+		ev.alt_pressed = bool(modifiers.get("alt", false))
+		ev.meta_pressed = bool(modifiers.get("meta", false))
+		vp.push_input(ev)
+	elif phase == "pressed":
+		var ev := InputEventMouseButton.new()
+		ev.position = point
+		ev.global_position = point
+		ev.button_index = MOUSE_BUTTON_LEFT if button == 0 else button
+		ev.pressed = true
+		ev.ctrl_pressed = bool(modifiers.get("ctrl", false))
+		ev.shift_pressed = bool(modifiers.get("shift", false))
+		ev.alt_pressed = bool(modifiers.get("alt", false))
+		ev.meta_pressed = bool(modifiers.get("meta", false))
+		vp.push_input(ev)
+	elif phase == "released":
+		var ev := InputEventMouseButton.new()
+		ev.position = point
+		ev.global_position = point
+		ev.button_index = MOUSE_BUTTON_LEFT if button == 0 else button
+		ev.pressed = false
+		ev.ctrl_pressed = bool(modifiers.get("ctrl", false))
+		ev.shift_pressed = bool(modifiers.get("shift", false))
+		ev.alt_pressed = bool(modifiers.get("alt", false))
+		ev.meta_pressed = bool(modifiers.get("meta", false))
+		vp.push_input(ev)
 
 func _build_inspector_data(node: Node) -> Dictionary:
 	var properties: Array[Dictionary] = []

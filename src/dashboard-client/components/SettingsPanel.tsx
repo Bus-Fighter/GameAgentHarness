@@ -1,4 +1,4 @@
-import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History, MousePointerClick, Info } from "lucide-react";
+import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, LayoutGrid, Search, Radio, History, MousePointerClick, Info } from "lucide-react";
 import { ViewTransition } from "react";
 import type { DashboardSettings } from "../hooks/useSettings";
 
@@ -21,6 +21,7 @@ interface SettingsPanelProps {
   onHistoryEnabledChange: (value: boolean) => void;
   onMaxHistoryEntriesChange: (value: number) => void;
   onPointerInjectModeChange: (value: DashboardSettings["pointerInjectMode"]) => void;
+  onDockIntervalChange: (value: number) => void;
 }
 
 export function SettingsPanel({
@@ -42,6 +43,7 @@ export function SettingsPanel({
   onHistoryEnabledChange,
   onMaxHistoryEntriesChange,
   onPointerInjectModeChange,
+  onDockIntervalChange,
 }: SettingsPanelProps) {
   if (!open) return null;
 
@@ -256,6 +258,36 @@ export function SettingsPanel({
                 </select>
               </div>
             </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
+                <LayoutGrid className="h-4 w-4 text-[var(--accent)]" />
+                Godot docks
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <Timer className="h-3.5 w-3.5" />
+                  Dock stream interval (s)
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onDockIntervalChange(settings.dockInterval - 0.05)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[4ch] text-center text-sm font-semibold text-[var(--text)]">{settings.dockInterval.toFixed(2)}s</span>
+                  <button
+                    type="button"
+                    onClick={() => onDockIntervalChange(settings.dockInterval + 0.05)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
                 <Search className="h-4 w-4 text-[var(--accent)]" />

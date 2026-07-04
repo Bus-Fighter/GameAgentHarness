@@ -8,6 +8,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { HarnessHost } from "../src/host/harness-host.js";
 import { encodeTextFrame, decodeFrames } from "../src/host/websocket-codec.js";
+import { FrameStore } from "../src/dashboard/frame-store.js";
 
 const TEST_HOST = "127.0.0.1";
 const INTAKE_PORT = 18765;
@@ -59,7 +60,7 @@ function connectWebSocket(url) {
           resolve({
             socket,
             send: (value) => socket.write(encodeTextFrame(JSON.stringify(value))),
-            nextMessage: (kind = null, timeoutMs = 5000) => waitForMessage(messages, kind, timeoutMs),
+            nextMessage: (timeoutMs = 5000) => waitForMessage(messages, timeoutMs),
             close: () => socket.end(),
           });
         } else {
@@ -89,17 +90,13 @@ function connectWebSocket(url) {
   });
 }
 
-function waitForMessage(messages, kind = null, timeoutMs = 5000) {
+function waitForMessage(messages, timeoutMs) {
   return new Promise((resolve) => {
     const start = Date.now();
     const check = setInterval(() => {
-      const index = messages.findIndex((msg) => {
-        if (kind != null) return msg?.kind === kind;
-        return msg?.kind !== "status";
-      });
-      if (index !== -1) {
+      if (messages.length > 0) {
         clearInterval(check);
-        resolve(messages.splice(index, 1)[0]);
+        resolve(messages.shift());
         return;
       }
       if (Date.now() - start > timeoutMs) {
@@ -166,8 +163,6 @@ test("dashboard serves built React app and status", async (t) => {
   assert.equal(status.dashboardClients, 0);
   assert.equal(status.engineClients, 0);
   assert.equal(status.lastEngineAt, null);
-  assert.equal(status.editorActive, false);
-  assert.equal(status.editorManaged, false);
   assert.equal(status.intakeUrl, "ws://127.0.0.1:18765");
   assert.equal(status.latestFrame, null);
 });
@@ -197,7 +192,7 @@ test("live frame is broadcast to dashboard and available via API", async (t) => 
   assert.equal(frameMsg.width, 100);
   assert.equal(frameMsg.height, 80);
   assert.equal(frameMsg.source, "runtime");
-  assert.equal(frameMsg.data, undefined);
+  assert.ok(frameMsg.data);
 
   const live = await fetchHttp("/api/live/frame", DASHBOARD_PORT);
   assert.equal(live.status, 200);
@@ -358,58 +353,6 @@ test("dashboard forwards snapshot, pause, play, stop, and input.pointer controls
   dashboard.close();
 });
 
-test("dashboard lists project scenes", async (t) => {
-  const SCENE_API_PORT = 18769;
-  const SCENE_DASHBOARD_PORT = 18770;
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-scenes-"));
-  fs.mkdirSync(path.join(projectRoot, "Scene"), { recursive: true });
-  fs.writeFileSync(path.join(projectRoot, "Scene", "Stage.tscn"), "[gd_scene]", "utf8");
-  fs.writeFileSync(path.join(projectRoot, "Scene", "Menu.tscn"), "[gd_scene]", "utf8");
-  fs.writeFileSync(path.join(projectRoot, "README.md"), "# project", "utf8");
-
-  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-dashboard-scenes-"));
-  const host = new HarnessHost({
-    host: TEST_HOST,
-    port: SCENE_API_PORT,
-    traceDir: traceRoot,
-    projectRoot,
-    dashboard: true,
-    dashboardHost: TEST_HOST,
-    dashboardPort: SCENE_DASHBOARD_PORT,
-  });
-  await host.start();
-  t.after(() => {
-    host.stop();
-    try { fs.rmSync(traceRoot, { recursive: true, force: true }); } catch {}
-    try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {}
-  });
-
-  const scenes = await fetchJson("/api/scenes", SCENE_DASHBOARD_PORT);
-  assert.equal(scenes.ok, true);
-  assert.deepEqual(scenes.scenes, ["Scene/Menu.tscn", "Scene/Stage.tscn"]);
-});
-
-test("dashboard forwards scene.open control to engine clients", async (t) => {
-  const { host } = await createHost(t);
-
-  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
-  const engineHello = await engine.nextMessage();
-  assert.equal(engineHello.kind, "host.hello");
-
-  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
-  const dashboardHello = await dashboard.nextMessage();
-  assert.equal(dashboardHello.kind, "hello");
-
-  dashboard.send({ kind: "control", action: "scene.open", path: "Scene/Stage.tscn" });
-  const msg = await engine.nextMessage();
-  assert.equal(msg.kind, "control");
-  assert.equal(msg.action, "scene.open");
-  assert.equal(msg.path, "Scene/Stage.tscn");
-
-  engine.close();
-  dashboard.close();
-});
-
 test("SSE endpoint streams events when WebSocket is unavailable", async (t) => {
   const { host } = await createHost(t);
 
@@ -449,7 +392,7 @@ test("SSE endpoint streams events when WebSocket is unavailable", async (t) => {
   });
 
   const deadline = Date.now() + 2000;
-  while (!sseMessages.find((m) => m.kind === "event") && Date.now() < deadline) {
+  while (sseMessages.length < 2 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
@@ -571,157 +514,6 @@ test("file API reads project files and git status", async (t) => {
   assert.equal(fs.readFileSync(path.join(projectRoot, "Scripts", "StageSession.cs"), "utf8"), "class StageSession { int x; }");
 });
 
-test("host sends signal subscriptions from profile after engine connects", async (t) => {
-  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-signals-"));
-  const profilePath = path.join(traceRoot, "test.profile.json");
-  fs.writeFileSync(
-    profilePath,
-    JSON.stringify({
-      signalSubscriptions: [
-        {
-          match: { nodeClass: "PlayerHealthSystem" },
-          signal: "HpChanged",
-          eventType: "player.hp_changed",
-          argMapping: ["previous", "current"],
-        },
-      ],
-    }),
-  );
-
-  const host = new HarnessHost({
-    host: TEST_HOST,
-    port: INTAKE_PORT,
-    traceDir: traceRoot,
-    dashboard: true,
-    dashboardHost: TEST_HOST,
-    dashboardPort: DASHBOARD_PORT,
-    profilePath,
-  });
-  await host.start();
-  t.after(() => {
-    host.stop();
-    try {
-      fs.rmSync(traceRoot, { recursive: true, force: true });
-    } catch {}
-  });
-
-  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
-  const engineHello = await engine.nextMessage();
-  assert.equal(engineHello.kind, "host.hello");
-
-  engine.send({
-    kind: "event",
-    type: "engine.connected",
-    source: "godot",
-    engine: { name: "godot", version: "4.x" },
-    project: { name: "TestProject", root: "/tmp/test" },
-    data: {},
-  });
-
-  const controlMsg = await engine.nextMessage("control");
-  assert.equal(controlMsg.kind, "control");
-  assert.equal(controlMsg.action, "signal.subscribe");
-  assert.equal(controlMsg.signal, "HpChanged");
-  assert.equal(controlMsg.eventType, "player.hp_changed");
-  assert.deepEqual(controlMsg.argMapping, ["previous", "current"]);
-
-  engine.close();
-});
-
-test("dashboard hello includes signal subscriptions from profile", async (t) => {
-  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-hello-signals-"));
-  const profilePath = path.join(traceRoot, "test.profile.json");
-  fs.writeFileSync(
-    profilePath,
-    JSON.stringify({
-      signalSubscriptions: [
-        {
-          match: { nodeClass: "GridSession" },
-          signal: "CellRevealed",
-          eventType: "game.reveal.result",
-          argMapping: ["position", "result"],
-        },
-      ],
-    }),
-  );
-
-  const host = new HarnessHost({
-    host: TEST_HOST,
-    port: INTAKE_PORT,
-    traceDir: traceRoot,
-    dashboard: true,
-    dashboardHost: TEST_HOST,
-    dashboardPort: DASHBOARD_PORT,
-    profilePath,
-  });
-  await host.start();
-  t.after(() => {
-    host.stop();
-    try {
-      fs.rmSync(traceRoot, { recursive: true, force: true });
-    } catch {}
-  });
-
-  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
-  const msg = await dashboard.nextMessage("hello");
-  assert.equal(msg.kind, "hello");
-  assert.ok(Array.isArray(msg.signalSubscriptions));
-  assert.equal(msg.signalSubscriptions.length, 1);
-  assert.equal(msg.signalSubscriptions[0].signal, "CellRevealed");
-  assert.equal(msg.signalSubscriptions[0].eventType, "game.reveal.result");
-  dashboard.close();
-});
-
-test("status reflects editorActive from editor-only events", async (t) => {
-  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-editor-active-"));
-  const host = new HarnessHost({
-    host: TEST_HOST,
-    port: INTAKE_PORT,
-    traceDir: traceRoot,
-    dashboard: true,
-    dashboardHost: TEST_HOST,
-    dashboardPort: DASHBOARD_PORT,
-  });
-  await host.start();
-  t.after(() => {
-    host.stop();
-    try {
-      fs.rmSync(traceRoot, { recursive: true, force: true });
-    } catch {}
-  });
-
-  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
-  const engineHello = await engine.nextMessage();
-  assert.equal(engineHello.kind, "host.hello");
-
-  engine.send({
-    kind: "event",
-    type: "plugin.enabled",
-    source: "godot",
-    engine: { name: "godot", version: "4.x" },
-    project: { name: "TestProject", root: "/tmp/test" },
-    data: {},
-  });
-
-  const dashboard = await connectWebSocket(`ws://${TEST_HOST}:${DASHBOARD_PORT}/ws`);
-  const hello = await dashboard.nextMessage("hello");
-  assert.equal(hello.kind, "hello");
-
-  const status = await dashboard.nextMessage("status");
-  assert.equal(status.kind, "status");
-  assert.equal(status.engineClients, 1);
-  assert.equal(status.editorActive, true);
-  assert.equal(status.editorManaged, false);
-
-  engine.close();
-  await dashboard.nextMessage("status");
-  const statusAfter = await fetchJson("/api/status", DASHBOARD_PORT);
-  assert.equal(statusAfter.editorActive, false);
-  assert.equal(statusAfter.editorManaged, false);
-
-  dashboard.close();
-});
-
 test("websocket codec handles large frames", () => {
   const bigText = "x".repeat(200_000);
   const frame = encodeTextFrame(bigText);
@@ -737,3 +529,127 @@ async function fetchJson(urlPath, port) {
   assert.equal(res.headers["content-type"], "application/json");
   return JSON.parse(res.body.toString("utf8"));
 }
+
+function makeTestJpeg(tag) {
+  return Buffer.from(`jpeg-${tag}-${Date.now()}`);
+}
+
+async function sendFrame(ws, source, buffer) {
+  ws.send({
+    kind: "frame",
+    source,
+    format: "jpeg",
+    data: buffer.toString("base64"),
+    width: 100,
+    height: 100,
+  });
+}
+
+test("FrameStore isolates frames by source and prefers runtime as primary", () => {
+  const store = new FrameStore();
+  const runtime = makeTestJpeg("runtime");
+  const editor = makeTestJpeg("editor");
+  store.setFrame({ buffer: runtime, source: "runtime" });
+  store.setFrame({ buffer: editor, source: "editor" });
+  assert.equal(store.getFrame("runtime").buffer, runtime);
+  assert.equal(store.getFrame("editor").buffer, editor);
+  assert.equal(store.getFrame("missing"), null);
+  assert.equal(store.getPrimaryFrame().buffer, runtime);
+});
+
+test("FrameStore primary frame ignores dock frames", () => {
+  const store = new FrameStore();
+  const dock = makeTestJpeg("dock");
+  store.setFrame({ buffer: dock, source: "dock:filesystem" });
+  assert.equal(store.getPrimaryFrame(), null);
+  const editor = makeTestJpeg("editor");
+  store.setFrame({ buffer: editor, source: "editor" });
+  assert.equal(store.getPrimaryFrame().buffer, editor);
+});
+
+test("FrameStore getFrame without source returns latest frame", () => {
+  const store = new FrameStore();
+  const editor = makeTestJpeg("editor");
+  const runtime = makeTestJpeg("runtime");
+  store.setFrame({ buffer: editor, source: "editor" });
+  store.setFrame({ buffer: runtime, source: "runtime" });
+  assert.equal(store.getFrame().buffer, runtime);
+});
+
+test("api/live/frame returns per-source frames", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-frame-source-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const hello = await engine.nextMessage();
+  assert.equal(hello.kind, "host.hello");
+
+  const runtimeFrame = makeTestJpeg("runtime");
+  const editorFrame = makeTestJpeg("editor");
+  await sendFrame(engine, "runtime", runtimeFrame);
+  await sendFrame(engine, "editor", editorFrame);
+
+  const runtimeRes = await fetchHttp(`/api/live/frame?source=runtime`, DASHBOARD_PORT);
+  assert.equal(runtimeRes.status, 200);
+  assert.equal(runtimeRes.headers["content-type"], "image/jpeg");
+  assert.ok(runtimeRes.body.equals(runtimeFrame));
+
+  const editorRes = await fetchHttp(`/api/live/frame?source=editor`, DASHBOARD_PORT);
+  assert.equal(editorRes.status, 200);
+  assert.ok(editorRes.body.equals(editorFrame));
+
+  engine.close();
+});
+
+test("api/live/frame without source returns primary frame", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-frame-primary-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const hello = await engine.nextMessage();
+  assert.equal(hello.kind, "host.hello");
+
+  const editorFrame = makeTestJpeg("editor");
+  await sendFrame(engine, "editor", editorFrame);
+
+  const primaryAfterEditor = await fetchHttp(`/api/live/frame`, DASHBOARD_PORT);
+  assert.equal(primaryAfterEditor.status, 200);
+  assert.ok(primaryAfterEditor.body.equals(editorFrame));
+
+  const runtimeFrame = makeTestJpeg("runtime");
+  await sendFrame(engine, "runtime", runtimeFrame);
+
+  const primaryAfterRuntime = await fetchHttp(`/api/live/frame`, DASHBOARD_PORT);
+  assert.equal(primaryAfterRuntime.status, 200);
+  assert.ok(primaryAfterRuntime.body.equals(runtimeFrame));
+
+  engine.close();
+});

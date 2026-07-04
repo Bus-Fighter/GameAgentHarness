@@ -41,22 +41,6 @@
   to { transform: scale(1); opacity: 1; }
 }
 
-@keyframes ripple {
-  0% {
-    transform: translate(-50%, -50%) scale(0.2);
-    opacity: 0.75;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(2.8);
-    opacity: 0;
-  }
-}
-
-@keyframes shrink {
-  from { width: 100%; }
-  to { width: 0%; }
-}
-
 ::view-transition-old(.fade-out) {
   animation: var(--duration-exit) ease-in fade reverse;
 }

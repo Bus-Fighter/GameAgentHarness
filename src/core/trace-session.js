@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { gzipSync } from "node:zlib";
-import { appendJsonLine, flushWriter, trimJsonLines, removeLinesBySeq } from "./jsonl.js";
+import { appendJsonLine } from "./jsonl.js";
 import { makeTraceId } from "./id.js";
 import { extractContextFromMessage, normalizeMessage, routeEventType } from "./events.js";
 
@@ -11,10 +10,6 @@ const STREAM_FILES = {
   logs: "logs.jsonl",
   validations: "validations.jsonl",
 };
-
-const MANIFEST_DEBOUNCE_MS = 1000;
-const DEFAULT_MAX_PERSISTED_FRAMES = 500;
-const DEFAULT_MAX_STREAM_EVENTS = 10000;
 
 export class TraceSession {
   constructor(store, { traceId, context } = {}) {
@@ -34,23 +29,9 @@ export class TraceSession {
     this.startedAt = new Date().toISOString();
     this.endedAt = null;
     this.dir = this.store.createTraceDir(this.traceId);
-    this.store.pruneTraces();
-    this._manifestDirty = false;
-    this._manifestTimer = null;
-    this._streamPaths = {};
-    this._evidenceFiles = [];
-    this._evidenceSeqs = new Map();
-    this._maxPersistedFrames = Number(
-      process.env.HARNESS_MAX_PERSISTED_FRAMES ?? DEFAULT_MAX_PERSISTED_FRAMES,
-    );
-    this._maxStreamEvents = Number(
-      process.env.HARNESS_MAX_STREAM_EVENTS ?? DEFAULT_MAX_STREAM_EVENTS,
-    );
 
-    for (const [stream, fileName] of Object.entries(STREAM_FILES)) {
-      const filePath = path.join(this.dir, fileName);
-      fs.writeFileSync(filePath, "", "utf8");
-      this._streamPaths[stream] = filePath;
+    for (const fileName of Object.values(STREAM_FILES)) {
+      fs.writeFileSync(path.join(this.dir, fileName), "", "utf8");
     }
 
     this.writeManifest();
@@ -71,12 +52,9 @@ export class TraceSession {
       ...base,
     };
 
-    appendJsonLine(this._streamPaths[stream], envelope);
+    appendJsonLine(path.join(this.dir, STREAM_FILES[stream]), envelope);
     this.counts[stream] += 1;
-    this._scheduleManifestWrite();
-    if (this.counts[stream] > this._maxStreamEvents) {
-      this._trimStream(stream);
-    }
+    this.writeManifest();
     return envelope;
   }
 
@@ -87,75 +65,7 @@ export class TraceSession {
   stop() {
     if (!this.endedAt) {
       this.endedAt = new Date().toISOString();
-    }
-    this.flush();
-    this._gzipStreams();
-    this.writeManifest();
-  }
-
-  flush() {
-    if (this._manifestTimer) {
-      clearTimeout(this._manifestTimer);
-      this._manifestTimer = null;
-    }
-    this._flushAll();
-    this.writeManifest();
-  }
-
-  registerEvidenceFile(filePath, eventSeq = null) {
-    this._evidenceFiles.push(filePath);
-    if (eventSeq != null) {
-      this._evidenceSeqs.set(filePath, eventSeq);
-    }
-    const prunedSeqs = [];
-    while (this._evidenceFiles.length > this._maxPersistedFrames) {
-      const oldest = this._evidenceFiles.shift();
-      if (oldest) {
-        const seq = this._evidenceSeqs.get(oldest);
-        if (seq != null) {
-          prunedSeqs.push(seq);
-          this._evidenceSeqs.delete(oldest);
-        }
-        try {
-          fs.unlinkSync(oldest);
-        } catch {}
-      }
-    }
-    if (prunedSeqs.length > 0) {
-      this._removeEventsBySeq(prunedSeqs);
-    }
-  }
-
-  _flushAll() {
-    for (const filePath of Object.values(this._streamPaths)) {
-      flushWriter(filePath);
-    }
-  }
-
-  _trimStream(stream) {
-    const filePath = this._streamPaths[stream];
-    const kept = trimJsonLines(filePath, Math.floor(this._maxStreamEvents * 0.8));
-    this.counts[stream] = kept;
-  }
-
-  _removeEventsBySeq(seqs) {
-    const filePath = this._streamPaths.events;
-    const removed = removeLinesBySeq(filePath, seqs);
-    this.counts.events = Math.max(0, this.counts.events - removed);
-    this._scheduleManifestWrite();
-  }
-
-  _gzipStreams() {
-    for (const filePath of Object.values(this._streamPaths)) {
-      try {
-        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
-          const data = fs.readFileSync(filePath);
-          fs.writeFileSync(`${filePath}.gz`, gzipSync(data));
-          fs.unlinkSync(filePath);
-        }
-      } catch (err) {
-        console.error(`[harness] failed to gzip ${filePath}: ${err.message}`);
-      }
+      this.writeManifest();
     }
   }
 
@@ -163,17 +73,7 @@ export class TraceSession {
     this.store.writeJson(this.traceId, "context.json", this.context ?? {});
   }
 
-  _scheduleManifestWrite() {
-    this._manifestDirty = true;
-    if (this._manifestTimer) return;
-    this._manifestTimer = setTimeout(() => {
-      this._manifestTimer = null;
-      this.writeManifest();
-    }, MANIFEST_DEBOUNCE_MS);
-  }
-
   writeManifest() {
-    this._manifestDirty = false;
     this.store.writeJson(this.traceId, "manifest.json", {
       schemaVersion: 1,
       traceId: this.traceId,

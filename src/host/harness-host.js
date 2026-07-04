@@ -2,12 +2,8 @@ import { ArtifactStore } from "../core/artifact-store.js";
 import { TraceSession } from "../core/trace-session.js";
 import { buildSummary } from "../core/summary-builder.js";
 import { WebSocketServer } from "./websocket-server.js";
-import { encodeTextFrame } from "./websocket-codec.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
-import { findGodotBin } from "../core/editor-launcher.js";
-import { loadProfile } from "../core/profile.js";
-import { EditorManager } from "./editor-manager.js";
 import path from "node:path";
 
 export class HarnessHost {
@@ -19,19 +15,10 @@ export class HarnessHost {
     dashboard = false,
     dashboardHost = "127.0.0.1",
     dashboardPort = 8766,
-    godotBin = null,
-    profilePath = null,
   } = {}) {
     this.port = Number(port);
     this.host = host;
     this.projectRoot = path.resolve(projectRoot);
-    this.godotBin = godotBin || findGodotBin();
-    this.profile = profilePath ? loadProfile(profilePath) : null;
-    this.editorManager = new EditorManager({
-      godotBin: this.godotBin,
-      projectRoot: this.projectRoot,
-      onChange: () => this.dashboard?.broadcastStatus(),
-    });
     this.store = new ArtifactStore(traceDir);
     this.trace = null;
     this.server = new WebSocketServer({
@@ -39,7 +26,7 @@ export class HarnessHost {
       host: this.host,
       onConnection: (socket) => this.onConnection(socket),
       onMessage: (socket, message) => this.onMessage(socket, message),
-      onClose: (socket) => this.onEngineDisconnect(socket),
+      onClose: () => {},
     });
     this.frameStore = new FrameStore();
     this.dashboard = dashboard
@@ -51,17 +38,11 @@ export class HarnessHost {
           intakePort: this.port,
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
-          editorActive: () => this.editorManager.isActive,
-          editorManaged: () => this.editorManager.isManaged,
-          onControlMessage: (message) => this.handleDashboardControl(message),
-          getRuntimeContext: () => ({ runtime: { running: this.runtimeRunning } }),
-          onFlushTrace: () => this.trace?.flush(),
-          profile: this.profile,
+          onControlMessage: (message) => this.forwardControlToEngine(message),
         })
       : null;
     this.liveFrameSeq = 0;
     this.lastEngineAt = null;
-    this.runtimeRunning = false;
   }
 
   async start() {
@@ -83,7 +64,6 @@ export class HarnessHost {
 
   onConnection(socket) {
     this.lastEngineAt = new Date().toISOString();
-    this.dashboard?.broadcastStatus();
     this.server.send(socket, {
       kind: "host.hello",
       host: "game-agent-harness",
@@ -128,34 +108,7 @@ export class HarnessHost {
 
     const event = this.trace.append(message);
     this.dashboard?.broadcastEvent(event);
-    if (event.type === "engine.connected") {
-      this.sendSignalSubscriptions(socket);
-      const data = event.data;
-      if (data?.engineMode === "editor") {
-        this.editorManager.markEditorSocket(socket);
-      }
-    } else if (event.type === "plugin.enabled" || event.type === "editor.context") {
-      this.editorManager.markEditorSocket(socket);
-    } else if (event.type === "runtime.started") {
-      this.runtimeRunning = true;
-      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
-    } else if (event.type === "runtime.stopped") {
-      this.runtimeRunning = false;
-      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
-    }
     this.server.send(socket, { kind: "host.ack", seq: event.seq, traceId: event.traceId });
-  }
-
-  onEngineDisconnect(socket) {
-    this.lastEngineAt = new Date().toISOString();
-    this.editorManager.unmarkSocket(socket);
-    if (this.server.clients.size === 0) {
-      if (this.runtimeRunning) {
-        this.runtimeRunning = false;
-        this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: false } } });
-      }
-    }
-    this.dashboard?.broadcastStatus();
   }
 
   handleFrame(socket, message) {
@@ -172,9 +125,7 @@ export class HarnessHost {
       return;
     }
 
-    if (process.env.HARNESS_DEBUG) {
-      console.log(`[harness] received frame ${message.width ?? "?"}x${message.height ?? "?"} ${buffer.length} bytes from ${message.source ?? "unknown"}`);
-    }
+    console.log(`[harness] received frame ${message.width ?? "?"}x${message.height ?? "?"} ${buffer.length} bytes from ${message.source ?? "unknown"}`);
 
     const format = message.format === "jpeg" || message.format === "jpg" ? "jpg" : "png";
     const contentType = format === "jpg" ? "image/jpeg" : "image/png";
@@ -184,7 +135,7 @@ export class HarnessHost {
     if (message.persist && this.trace) {
       seq = this.trace.nextSeq();
       fileName = `frame-${seq}.${format}`;
-      const evidencePath = this.store.writeBinary(this.trace.traceId, path.join("evidence", fileName), buffer);
+      this.store.writeBinary(this.trace.traceId, path.join("evidence", fileName), buffer);
       const event = this.trace.append({
         kind: "event",
         type: "evidence.frame",
@@ -200,7 +151,6 @@ export class HarnessHost {
           source: message.source ?? "unknown",
         },
       });
-      this.trace.registerEvidenceFile(evidencePath, event.seq);
       this.dashboard?.broadcastEvent(event);
     } else if (this.trace) {
       seq = ++this.liveFrameSeq;
@@ -218,13 +168,6 @@ export class HarnessHost {
     };
     this.frameStore.setFrame(frame);
     this.dashboard?.broadcastFrame(frame);
-    if (frame.source === "editor") {
-      this.editorManager.markEditorSocket(socket);
-    }
-    if (frame.source === "runtime" && !this.runtimeRunning) {
-      this.runtimeRunning = true;
-      this.dashboard?.broadcast({ kind: "context", context: { runtime: { running: true } } });
-    }
 
     this.server.send(socket, {
       kind: "host.ack",
@@ -235,48 +178,10 @@ export class HarnessHost {
 
   forwardControlToEngine(message) {
     const payload = { kind: "control", ...message };
-    const text = JSON.stringify(payload);
-    const frame = encodeTextFrame(text);
     for (const client of this.server.clients) {
       try {
-        this.server.sendFrame(client, frame);
+        this.server.send(client, payload);
       } catch {}
-    }
-  }
-
-  handleDashboardControl(message) {
-    if (message.action === "launch.editor") {
-      this.handleLaunchEditor(message);
-      return;
-    }
-    this.forwardControlToEngine(message);
-  }
-
-  handleLaunchEditor(message) {
-    const result = this.editorManager.handleLaunchControl(message, (control) =>
-      this.forwardControlToEngine(control),
-    );
-    if (!result.ok) {
-      this.dashboard?.broadcast({ kind: "editor.launch", ok: false, error: result.error });
-    } else if (!result.alreadyActive) {
-      this.dashboard?.broadcast({ kind: "editor.launch", ok: true, managed: this.editorManager.isManaged });
-    }
-  }
-
-  sendSignalSubscriptions(socket) {
-    const subscriptions = this.profile?.signalSubscriptions ?? this.profile?.raw?.signalSubscriptions ?? [];
-    if (!Array.isArray(subscriptions) || subscriptions.length === 0) {
-      return;
-    }
-    for (const sub of subscriptions) {
-      this.server.send(socket, {
-        kind: "control",
-        action: "signal.subscribe",
-        match: sub.match ?? {},
-        signal: sub.signal,
-        eventType: sub.eventType,
-        argMapping: sub.argMapping ?? [],
-      });
     }
   }
 

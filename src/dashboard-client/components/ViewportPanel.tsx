@@ -10,8 +10,10 @@ interface ViewportPanelProps {
   frame: FrameMessage | null;
   source: "runtime" | "editor";
   useMjpeg: boolean;
+  compact?: boolean;
   onSourceChange: (source: "runtime" | "editor") => void;
   onPointer: (phase: string, event: MouseEvent | TouchEvent) => void;
+  onCompactChange?: (compact: boolean) => void;
 }
 
 function generateClientId(): string {
@@ -25,8 +27,7 @@ function logViewport(message: string, data?: Record<string, unknown>) {
   console.log(`[harness:viewport] ${message}`, data ?? "");
 }
 
-export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, useMjpeg: useMjpegSetting, onSourceChange, onPointer }: ViewportPanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, useMjpeg: useMjpegSetting, compact = false, onSourceChange, onPointer, onCompactChange }: ViewportPanelProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mjpegFailed, setMjpegFailed] = useState(false);
   const [ripples, setRipples] = useState<Array<{ id: string; x: number; y: number }>>([]);
@@ -209,9 +210,11 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
     </div>
   );
 
+  const frameSource = source === "editor" ? "editor" : "runtime";
+
   const { url: mjpegBlobUrl, failed: mjpegStreamFailed } = useMjpegStream(
     effectiveUseMjpeg && captureEnabled,
-    getLiveFrameMjpegUrl(clientId),
+    getLiveFrameMjpegUrl(clientId, frameSource),
   );
 
   useEffect(() => {
@@ -222,9 +225,9 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
 
   const imgUrl = captureEnabled
     ? effectiveUseMjpeg
-      ? mjpegBlobUrl || (frame ? getLiveFrameUrl(frame.seq) : null)
+      ? mjpegBlobUrl || (frame ? getLiveFrameUrl(frame.seq, frameSource) : null)
       : frame
-        ? getLiveFrameUrl(frame.seq)
+        ? getLiveFrameUrl(frame.seq, frameSource)
         : null
     : null;
 
@@ -239,9 +242,9 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
 
   return (
     <>
-      <section className={`card overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] ${collapsed ? "flex-shrink-0" : ""}`}>
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">
+      <section className={`card overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] ${compact ? "flex-shrink-0" : ""}`}>
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
             <Monitor className="h-4 w-4" />
             Live Viewport
           </div>
@@ -272,11 +275,11 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
             </div>
             <button
               type="button"
-              onClick={() => setCollapsed((v) => !v)}
+              onClick={() => onCompactChange?.(!compact)}
               className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
-              title={collapsed ? "Expand" : "Collapse"}
+              title={compact ? "Expand viewport" : "Compact viewport"}
             >
-              {collapsed ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
+              {compact ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
             </button>
             <button
               type="button"
@@ -288,14 +291,8 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
             </button>
           </div>
         </div>
-        <div
-          className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${
-            collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
-          }`}
-        >
-          <div className="relative aspect-[16/10] max-h-[35vh] overflow-hidden bg-black lg:max-h-none">
-            {!fullscreen && renderViewportContent(imgUrl)}
-          </div>
+        <div className={`relative overflow-hidden bg-black ${compact ? "aspect-video max-h-[22vh]" : "aspect-[16/10] max-h-[35vh] lg:max-h-none"}`}>
+          {!fullscreen && renderViewportContent(imgUrl)}
         </div>
       </section>
       {fullscreen && (

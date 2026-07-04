@@ -12,6 +12,8 @@ import { TransportToolbar } from "./components/TransportToolbar";
 import { FileReviewPanel } from "./components/FileReviewPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { InspectPanel } from "./components/InspectPanel";
+import { LiveActivityStrip } from "./components/LiveActivityStrip";
+import { DocksPanel } from "./components/DocksPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSettings } from "./hooks/useSettings";
 import { fetchStatus, fetchScenes } from "./api";
@@ -29,6 +31,7 @@ import type {
   ResourcePreview,
   ResourceImportSettings,
   SignalSubscription,
+  HarnessDockInfo,
 } from "./types";
 
 interface EvidenceItem {
@@ -80,6 +83,8 @@ export default function App() {
   const [editorManaged, setEditorManaged] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [docks, setDocks] = useState<HarnessDockInfo[]>([]);
+  const [dockFrames, setDockFrames] = useState<Record<string, FrameMessage | null>>({});
 
   const {
     settings,
@@ -98,6 +103,10 @@ export default function App() {
     setHistoryEnabled,
     setMaxHistoryEntries,
     setPointerInjectMode,
+    setIgnorePatterns,
+    setViewportCompact,
+    setDockInterval,
+    setEnabledDocks,
   } = useSettings();
 
   const lastSeqRef = useRef(0);
@@ -198,6 +207,11 @@ export default function App() {
         sendControl("scene.tree");
         sendControl("frame_deduplication", { enabled: deduplicateFramesRef.current });
         sendControl("pointer_inject_mode", { mode: pointerInjectModeRef.current });
+      }
+      if (event.type === "editor.docks") {
+        const data = event.data as { docks?: HarnessDockInfo[] } | undefined;
+        const list = data?.docks ?? [];
+        setDocks(list);
       }
       if (event.type?.startsWith("evidence.") && event.data?.path && traceId) {
         setEvidence((prev) => {
@@ -380,11 +394,14 @@ export default function App() {
       case "frame":
         if (msg.source === "editor") {
           latestEditorFrameRef.current = msg;
-        } else {
+        } else if (msg.source === "runtime") {
           latestRuntimeFrameRef.current = msg;
           if (!runtimeRunning) {
             setRuntimeRunning(true);
           }
+        } else if (msg.source?.startsWith("dock:")) {
+          const dockId = msg.source.slice(5);
+          setDockFrames((prev) => ({ ...prev, [dockId]: msg }));
         }
         scheduleFrameFlush();
         break;
@@ -414,7 +431,7 @@ export default function App() {
           if (msg.latestFrame) {
             if (msg.latestFrame.source === "editor") {
               setEditorFrame(msg.latestFrame);
-            } else {
+            } else if (msg.latestFrame.source === "runtime") {
               setRuntimeFrame(msg.latestFrame);
             }
           }
@@ -496,6 +513,18 @@ export default function App() {
 
   useEffect(() => {
     if (!connected) return;
+    const ids = new Set([...settings.enabledDocks, ...docks.map((d) => d.id)]);
+    for (const id of ids) {
+      sendControl("dock_stream", {
+        dock: id,
+        enabled: settings.enabledDocks.includes(id),
+        interval: settings.dockInterval,
+      });
+    }
+  }, [connected, settings.enabledDocks, settings.dockInterval, docks, sendControl]);
+
+  useEffect(() => {
+    if (!connected) return;
     const level = (() => {
       switch (settings.logLevel) {
         case "all":
@@ -573,6 +602,69 @@ export default function App() {
     [sendControl],
   );
 
+  const handleDockPointer = useCallback(
+    (dock: string, phase: string, e: MouseEvent | TouchEvent) => {
+      const img = e.currentTarget as HTMLImageElement;
+      const rect = img.getBoundingClientRect();
+      let clientX: number;
+      let clientY: number;
+      if ("touches" in e && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ("changedTouches" in e && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        clientX = (e as MouseEvent).clientX;
+        clientY = (e as MouseEvent).clientY;
+      }
+      const naturalWidth = img.naturalWidth || rect.width;
+      const naturalHeight = img.naturalHeight || rect.height;
+      const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+      const renderedWidth = naturalWidth * scale;
+      const renderedHeight = naturalHeight * scale;
+      const offsetX = (rect.width - renderedWidth) / 2;
+      const offsetY = (rect.height - renderedHeight) / 2;
+
+      const safeWidth = renderedWidth || rect.width;
+      const safeHeight = renderedHeight || rect.height;
+      const x = Math.max(0, Math.min(1, (clientX - rect.left - offsetX) / safeWidth));
+      const y = Math.max(0, Math.min(1, (clientY - rect.top - offsetY) / safeHeight));
+
+      const mouse = e as MouseEvent;
+      sendControl("input.editor_pointer", {
+        dock,
+        phase,
+        x,
+        y,
+        button: mouse.button ?? 0,
+        modifiers: {
+          ctrl: mouse.ctrlKey || false,
+          shift: mouse.shiftKey || false,
+          alt: mouse.altKey || false,
+          meta: mouse.metaKey || false,
+        },
+      });
+      e.preventDefault();
+    },
+    [sendControl],
+  );
+
+  const handleDockToggle = useCallback(
+    (id: string) => {
+      setEnabledDocks((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return Array.from(next);
+      });
+    },
+    [setEnabledDocks],
+  );
+
   const handleRecord = useCallback(() => {
     if (!runtimeRunning) return;
     const next = !recordingPreference;
@@ -600,6 +692,59 @@ export default function App() {
     setPending("Stop", 5000);
     sendControl("stop");
   }, [sendControl, setPending]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (e.key === "Escape") {
+        if (settingsOpen) {
+          startTransition(() => setSettingsOpen(false));
+          return;
+        }
+      }
+      if (isInput) return;
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        if (runtimeRunning) {
+          handlePause();
+        } else if (engineConnected) {
+          handlePlay();
+        }
+        return;
+      }
+      if (e.key === "r" || e.key === "R") {
+        if (runtimeRunning) handleRecord();
+        return;
+      }
+      if (e.key === "s" || e.key === "S") {
+        handleSnapshot();
+        return;
+      }
+      if (e.key === "1") {
+        startTransition(() => setActiveTab("live"));
+        return;
+      }
+      if (e.key === "2") {
+        startTransition(() => setActiveTab("events"));
+        return;
+      }
+      if (e.key === "3") {
+        startTransition(() => setActiveTab("evidence"));
+        return;
+      }
+      if (e.key === "4") {
+        startTransition(() => setActiveTab("inspect"));
+        return;
+      }
+      if (e.key === "5") {
+        startTransition(() => setActiveTab("files"));
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [settingsOpen, runtimeRunning, engineConnected, handlePause, handlePlay, handleRecord, handleSnapshot]);
 
   const handleSceneChange = useCallback(
     (scene: string) => {
@@ -642,6 +787,11 @@ export default function App() {
     [sendControl],
   );
 
+  useEffect(() => {
+    if (!connected || activeTab !== "docks") return;
+    sendControl("docks.refresh");
+  }, [connected, activeTab, sendControl]);
+
   const handleRefreshSceneTree = useCallback(() => {
     sendControl("scene.tree");
   }, [sendControl]);
@@ -662,12 +812,21 @@ export default function App() {
     [sendControl],
   );
 
+  const handleClearResourcePreview = useCallback(() => {
+    setResourcePreview(null);
+  }, []);
+
+  const handleClearResourceImportSettings = useCallback(() => {
+    setResourceImportSettings(null);
+  }, []);
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden lg:min-h-dvh lg:overflow-auto">
       <Header
         connected={connected}
         mode={mode}
         engineConnected={engineConnected}
+        engineClients={status?.engineClients ?? 0}
         traceId={traceId}
         traceActive={status?.traceActive ?? false}
         paused={paused}
@@ -675,28 +834,38 @@ export default function App() {
         onOpenSettings={() => startTransition(() => setSettingsOpen(true))}
       />
       {activeTab === "live" && (
-          <TabPanel>
-            <div className="flex h-full flex-col gap-3 overflow-y-auto lg:contents">
-              <ViewportPanel
-                captureEnabled={viewportSource === "runtime" ? runtimeCaptureEnabled : settings.editorViewportEnabled}
-                frame={viewportSource === "runtime" ? runtimeFrame : editorFrame}
-                source={viewportSource}
-                useMjpeg={settings.useMjpeg}
-                onSourceChange={setViewportSource}
-                onPointer={handlePointer}
-              />
-              <SceneCard
-                context={context}
-                scenes={scenes}
-                activeScene={activeScene}
-                engineConnected={engineConnected}
-                onSceneChange={handleSceneChange}
-                onRefreshScenes={handleRefreshScenes}
-              />
-              <DiagnosticsPanel status={status} mode={mode} />
-            </div>
-          </TabPanel>
-        )}
+        <TabPanel>
+          <div className="flex h-full flex-col gap-2 overflow-y-auto lg:contents">
+            <ViewportPanel
+              captureEnabled={viewportSource === "runtime" ? runtimeCaptureEnabled : settings.editorViewportEnabled}
+              frame={viewportSource === "runtime" ? runtimeFrame : editorFrame}
+              source={viewportSource}
+              useMjpeg={settings.useMjpeg}
+              compact={settings.viewportCompact}
+              onSourceChange={setViewportSource}
+              onPointer={handlePointer}
+              onCompactChange={setViewportCompact}
+            />
+            <SceneCard
+              context={context}
+              scenes={scenes}
+              activeScene={activeScene}
+              engineConnected={engineConnected}
+              onSceneChange={handleSceneChange}
+              onRefreshScenes={handleRefreshScenes}
+            />
+            <DiagnosticsPanel status={status} mode={mode} />
+            <LiveActivityStrip
+              events={events}
+              logs={logs}
+              evidence={evidence}
+              onEventClick={() => startTransition(() => setActiveTab("events"))}
+              onEvidenceClick={() => startTransition(() => setActiveTab("evidence"))}
+              onLogClick={() => startTransition(() => setActiveTab("events"))}
+            />
+          </div>
+        </TabPanel>
+      )}
         {activeTab === "events" && (
           <TabPanel>
             <EventsPanel
@@ -716,14 +885,31 @@ export default function App() {
             <EvidencePanel evidence={evidence} />
           </TabPanel>
         )}
+        {activeTab === "docks" && (
+          <TabPanel>
+            <DocksPanel
+              docks={docks}
+              enabledDocks={settings.enabledDocks}
+              dockInterval={settings.dockInterval}
+              useMjpeg={settings.useMjpeg}
+              dockFrames={dockFrames}
+              onToggleDock={handleDockToggle}
+              onPointer={handleDockPointer}
+            />
+          </TabPanel>
+        )}
       {activeTab === "files" && (
         <TabPanel>
           <FileReviewPanel
             fontSize={settings.fontSize}
             preview={resourcePreview}
             importSettings={resourceImportSettings}
+            ignorePatterns={settings.ignorePatterns}
             onRequestPreview={handleRequestResourcePreview}
             onRequestImportSettings={handleRequestResourceImportSettings}
+            onClearPreview={handleClearResourcePreview}
+            onClearImportSettings={handleClearResourceImportSettings}
+            onIgnorePatternsChange={setIgnorePatterns}
           />
         </TabPanel>
       )}
@@ -824,6 +1010,7 @@ export default function App() {
         onHistoryEnabledChange={setHistoryEnabled}
         onMaxHistoryEntriesChange={setMaxHistoryEntries}
         onPointerInjectModeChange={setPointerInjectMode}
+        onDockIntervalChange={setDockInterval}
       />
     </div>
   );

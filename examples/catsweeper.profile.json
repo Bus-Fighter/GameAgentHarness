@@ -64,26 +64,6 @@
       "description": "A validation assertion result."
     }
   ],
-  "signalSubscriptions": [
-    {
-      "match": { "nodeClass": "GridSession" },
-      "signal": "CellRevealed",
-      "eventType": "game.reveal.result",
-      "argMapping": ["position", "result", "neighborLevel"]
-    },
-    {
-      "match": { "nodeClass": "PlayerHealthSystem" },
-      "signal": "HpChanged",
-      "eventType": "player.hp_changed",
-      "argMapping": ["previous", "current", "reason"]
-    },
-    {
-      "match": { "nodeClass": "PlayerProgressionSystem" },
-      "signal": "ExpChanged",
-      "eventType": "player.exp_changed",
-      "argMapping": ["previous", "current", "source"]
-    }
-  ],
   "validationScenarios": [],
   "safety": {
     "defaultMode": "read-only trace inspection",

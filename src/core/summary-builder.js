@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readJsonLinesSync } from "./jsonl.js";
+import { readJsonLines } from "./jsonl.js";
 
 function bullet(value) {
   return `- ${value}`;
@@ -20,10 +20,10 @@ export function buildSummary(store, traceId) {
   const dir = store.traceDir(traceId);
   const manifest = store.readJson(traceId, "manifest.json") ?? {};
   const context = store.readJson(traceId, "context.json") ?? {};
-  const events = readJsonLinesSync(path.join(dir, "events.jsonl"));
-  const snapshots = readJsonLinesSync(path.join(dir, "snapshots.jsonl"));
-  const logs = readJsonLinesSync(path.join(dir, "logs.jsonl"));
-  const validations = readJsonLinesSync(path.join(dir, "validations.jsonl"));
+  const events = readJsonLines(path.join(dir, "events.jsonl"));
+  const snapshots = readJsonLines(path.join(dir, "snapshots.jsonl"));
+  const logs = readJsonLines(path.join(dir, "logs.jsonl"));
+  const validations = readJsonLines(path.join(dir, "validations.jsonl"));
 
   const recent = [...events, ...snapshots, ...logs, ...validations]
     .sort((a, b) => a.seq - b.seq)

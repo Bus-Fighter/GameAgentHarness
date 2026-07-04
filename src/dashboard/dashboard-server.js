@@ -43,6 +43,80 @@ function serveFile(res, filePath, contentType) {
   res.end(data);
 }
 
+const ALWAYS_SKIP_DIRS = new Set([".git", ".godot", "node_modules", "dist"]);
+
+function globToRegex(pattern) {
+  let pat = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  pat = pat.replace(/\*\*/g, "{{GLOBSTAR}}");
+  pat = pat.replace(/\*/g, "[^/]*");
+  pat = pat.replace(/\?/g, "[^/]");
+  pat = pat.replace(/{{GLOBSTAR}}/g, ".*");
+  return new RegExp("^" + pat + "$", "i");
+}
+
+function shouldIgnore(relPath, ignorePatterns) {
+  if (!ignorePatterns || ignorePatterns.length === 0) return false;
+  const normalized = relPath.replace(/\\/g, "/");
+  const basename = path.posix.basename(normalized);
+  for (const pattern of ignorePatterns) {
+    if (!pattern) continue;
+    try {
+      const regex = globToRegex(pattern);
+      if (pattern.includes("/")) {
+        if (regex.test(normalized)) return true;
+      } else if (regex.test(basename)) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+function parseIgnorePatterns(url) {
+  const raw = url.searchParams.get("ignore") || "";
+  if (!raw) return [];
+  return raw.split(",").map((p) => decodeURIComponent(p.trim())).filter(Boolean);
+}
+
+function isBinaryContent(buffer) {
+  for (let i = 0; i < Math.min(buffer.length, 8192); i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
+function isProtectedPath(rel) {
+  const normalized = rel.replace(/\\/g, "/");
+  if (normalized === "" || normalized === ".") return true;
+  if (normalized === ".git" || normalized.startsWith(".git/")) return true;
+  return false;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesGlob(relPath, pattern) {
+  if (!pattern) return true;
+  const normalized = relPath.replace(/\\/g, "/");
+  const hasSlash = pattern.includes("/");
+  const regex = globToRegex(hasSlash ? pattern : `**/${pattern}`);
+  return regex.test(normalized);
+}
+
+function createContentMatcher(query, caseSensitive, wholeWord) {
+  if (wholeWord) {
+    const pattern = `\\b${escapeRegex(query)}\\b`;
+    const flags = caseSensitive ? "g" : "gi";
+    const re = new RegExp(pattern, flags);
+    return (line) => re.test(line);
+  }
+  const q = caseSensitive ? query : query.toLowerCase();
+  return (line) => (caseSensitive ? line.includes(query) : line.toLowerCase().includes(q));
+}
+
 export class DashboardServer {
   constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, editorManaged = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
     this.host = host;
@@ -67,7 +141,7 @@ export class DashboardServer {
   }
 
   broadcastStatus() {
-    const frame = this.frameStore?.getFrame();
+    const frame = this.frameStore?.getPrimaryFrame();
     const status = {
       kind: "status",
       traceActive: Boolean(this.trace && !this.trace.endedAt),
@@ -153,7 +227,7 @@ export class DashboardServer {
     const pathname = url.pathname;
 
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.method === "OPTIONS") {
@@ -203,7 +277,7 @@ export class DashboardServer {
     }
 
     if (pathname === "/api/status") {
-      const frame = this.frameStore?.getFrame();
+      const frame = this.frameStore?.getPrimaryFrame();
       json(res, {
         traceActive: Boolean(this.trace && !this.trace.endedAt),
         traceId: this.trace?.traceId ?? null,
@@ -287,7 +361,9 @@ export class DashboardServer {
     }
 
     if (pathname === "/api/live/frame") {
-      const frame = this.frameStore?.getFrame();
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const source = url.searchParams.get("source");
+      const frame = source ? this.frameStore?.getFrame(source) : this.frameStore?.getPrimaryFrame();
       if (!frame || !frame.buffer) {
         res.writeHead(204);
         res.end();
@@ -461,6 +537,9 @@ export class DashboardServer {
     const targets = singleClient ? [singleClient] : this.mjpegClients;
     for (const client of targets) {
       try {
+        if (client.source && frame.source !== client.source) {
+          continue;
+        }
         const writeFrame = () => {
           client.res.write(boundary);
           client.res.write("\r\n");
@@ -486,17 +565,19 @@ export class DashboardServer {
   }
 
   handleMjpeg(_req, res) {
-    const clientId = new URL(_req.url, `http://${_req.headers.host}`).searchParams.get("client") || "unknown";
-    console.log(`[mjpeg] client connected: ${clientId}`);
+    const url = new URL(_req.url, `http://${_req.headers.host}`);
+    const clientId = url.searchParams.get("client") || "unknown";
+    const source = url.searchParams.get("source") || null;
+    console.log(`[mjpeg] client connected: ${clientId}${source ? ` source=${source}` : ""}`);
     res.writeHead(200, {
       "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
-    const client = { res, firstFrame: true };
+    const client = { res, firstFrame: true, source };
     this.mjpegClients.add(client);
-    const frame = this.frameStore?.getFrame();
+    const frame = source ? this.frameStore?.getFrame(source) : this.frameStore?.getPrimaryFrame();
     if (frame && frame.buffer) {
       this.broadcastMjpegFrame(frame, client);
     } else {
@@ -615,6 +696,8 @@ export class DashboardServer {
   }
 
   handleFilesRequest(req, res, pathname, url) {
+    const ignorePatterns = parseIgnorePatterns(url);
+
     if (pathname === "/api/files/tree") {
       const relPath = url.searchParams.get("path") || ".";
       const resolved = this.resolveProjectPath(relPath);
@@ -629,7 +712,7 @@ export class DashboardServer {
       const stat = fs.statSync(resolved.fullPath);
       if (stat.isDirectory()) {
         const entries = fs.readdirSync(resolved.fullPath, { withFileTypes: true })
-          .filter((d) => !d.name.startsWith("."))
+          .filter((d) => !d.name.startsWith(".") && !shouldIgnore(path.posix.join(resolved.rel.replace(/\\/g, "/"), d.name), ignorePatterns))
           .map((d) => ({
             name: d.name,
             type: d.isDirectory() ? "directory" : "file",
@@ -643,6 +726,70 @@ export class DashboardServer {
         return;
       }
       json(res, { ok: false, error: "not a directory" }, 400);
+      return;
+    }
+
+    if (pathname === "/api/files/search") {
+      const q = url.searchParams.get("q") || "";
+      const relPath = url.searchParams.get("path") || ".";
+      const contentMode = url.searchParams.get("content") === "1";
+      const caseSensitive = url.searchParams.get("case") === "1";
+      const wholeWord = url.searchParams.get("word") === "1";
+      const glob = url.searchParams.get("glob") || "";
+      const resolved = this.resolveProjectPath(relPath);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      if (!fs.existsSync(resolved.fullPath)) {
+        json(res, { ok: false, error: "not found" }, 404);
+        return;
+      }
+      if (q.length === 0) {
+        json(res, { ok: true, mode: contentMode ? "content" : "name", query: q, matches: [], files: [], filesScanned: 0, truncated: false });
+        return;
+      }
+      const searchOptions = { caseSensitive, wholeWord, glob, ignorePatterns };
+      if (contentMode) {
+        const result = this._searchFileContents(resolved.fullPath, resolved.rel, q, searchOptions);
+        json(res, { ok: true, mode: "content", query: q, matches: result.matches, filesScanned: result.filesScanned, truncated: result.truncated });
+        return;
+      }
+      const result = this._searchFileNames(resolved.fullPath, resolved.rel, q, searchOptions);
+      json(res, { ok: true, mode: "name", query: q, files: result.files, filesScanned: result.filesScanned, truncated: result.truncated });
+      return;
+    }
+
+    if (pathname === "/api/files/create-dir") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      this.readRequestBody(req).then((body) => {
+        let payload;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          json(res, { ok: false, error: "invalid json" }, 400);
+          return;
+        }
+        const target = this.resolveProjectPath(payload.path || ".");
+        if (target.error) {
+          json(res, { ok: false, error: target.error }, 400);
+          return;
+        }
+        if (isProtectedPath(target.rel)) {
+          json(res, { ok: false, error: "protected path" }, 400);
+          return;
+        }
+        try {
+          fs.mkdirSync(target.fullPath, { recursive: true });
+          this._notifyFsRefresh(target.rel);
+          json(res, { ok: true, path: target.rel });
+        } catch (e) {
+          json(res, { ok: false, error: e.message }, 500);
+        }
+      });
       return;
     }
 
@@ -681,18 +828,149 @@ export class DashboardServer {
             json(res, { ok: false, error: target.error }, 400);
             return;
           }
+          if (isProtectedPath(target.rel)) {
+            json(res, { ok: false, error: "protected path" }, 400);
+            return;
+          }
           const dir = path.dirname(target.fullPath);
           if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
           }
           fs.writeFileSync(target.fullPath, payload.content ?? "", "utf8");
+          this._notifyFsRefresh(target.rel);
           json(res, { ok: true, path: target.rel });
         });
+        return;
+      }
+      if (req.method === "DELETE") {
+        const resolved = this.resolveProjectPath(relPath || ".");
+        if (resolved.error) {
+          json(res, { ok: false, error: resolved.error }, 400);
+          return;
+        }
+        if (!fs.existsSync(resolved.fullPath)) {
+          json(res, { ok: false, error: "not found" }, 404);
+          return;
+        }
+        if (isProtectedPath(resolved.rel)) {
+          json(res, { ok: false, error: "protected path" }, 400);
+          return;
+        }
+        try {
+          fs.rmSync(resolved.fullPath, { recursive: true, force: false });
+          this._notifyFsRefresh(resolved.rel);
+          json(res, { ok: true, path: resolved.rel });
+        } catch (e) {
+          json(res, { ok: false, error: e.message }, 500);
+        }
         return;
       }
     }
 
     notFound(res);
+  }
+
+  _notifyFsRefresh(relPath) {
+    try {
+      this.onControlMessage?.({ action: "fs.refresh", path: relPath.replace(/\\/g, "/") });
+    } catch {}
+  }
+
+  _searchFileNames(rootPath, rootRel, query, options = {}) {
+    const { ignorePatterns = [], glob = "" } = options;
+    const files = [];
+    const MAX_FILES = 200;
+    const q = query.toLowerCase();
+    let filesScanned = 0;
+    const walk = (dir, rel) => {
+      if (files.length >= MAX_FILES) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (files.length >= MAX_FILES) break;
+        if (entry.name.startsWith(".")) continue;
+        const childRel = path.posix.join(rel.replace(/\\/g, "/"), entry.name);
+        if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
+        if (shouldIgnore(childRel, ignorePatterns)) continue;
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), childRel);
+        } else if (entry.isFile()) {
+          if (!matchesGlob(childRel, glob)) continue;
+          filesScanned++;
+          if (childRel.toLowerCase().includes(q)) {
+            files.push({ name: entry.name, type: "file", path: childRel });
+          }
+        }
+      }
+    };
+    walk(rootPath, rootRel);
+    return { files, filesScanned, truncated: files.length >= MAX_FILES };
+  }
+
+  _searchFileContents(rootPath, rootRel, query, options = {}) {
+    const { ignorePatterns = [], caseSensitive = false, wholeWord = false, glob = "" } = options;
+    const matches = [];
+    const MAX_MATCHES = 1000;
+    const MAX_FILES = 1000;
+    const MAX_FILE_SIZE = 1024 * 1024;
+    const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+    let fileCount = 0;
+    let filesScanned = 0;
+    let totalBytes = 0;
+    let truncated = false;
+    const lineMatches = createContentMatcher(query, caseSensitive, wholeWord);
+    const walk = (dir, rel) => {
+      if (matches.length >= MAX_MATCHES || fileCount >= MAX_FILES || truncated) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (matches.length >= MAX_MATCHES || fileCount >= MAX_FILES || truncated) break;
+        if (entry.name.startsWith(".")) continue;
+        const childRel = path.posix.join(rel.replace(/\\/g, "/"), entry.name);
+        if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
+        if (shouldIgnore(childRel, ignorePatterns)) continue;
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), childRel);
+        } else if (entry.isFile()) {
+          if (!matchesGlob(childRel, glob)) continue;
+          const fullPath = path.join(dir, entry.name);
+          const stat = fs.statSync(fullPath);
+          if (!stat.isFile() || stat.size > MAX_FILE_SIZE) continue;
+          let buffer;
+          try {
+            buffer = fs.readFileSync(fullPath);
+          } catch {
+            continue;
+          }
+          if (isBinaryContent(buffer)) continue;
+          totalBytes += buffer.length;
+          if (totalBytes > MAX_TOTAL_BYTES) {
+            truncated = true;
+            break;
+          }
+          fileCount++;
+          filesScanned++;
+          const content = buffer.toString("utf8");
+          const lines = content.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            if (lineMatches(lines[i])) {
+              matches.push({ path: childRel, lineNo: i + 1, line: lines[i].slice(0, 240) });
+              if (matches.length >= MAX_MATCHES) break;
+            }
+          }
+        }
+      }
+    };
+    walk(rootPath, rootRel);
+    return { matches, filesScanned, truncated: truncated || matches.length >= MAX_MATCHES || fileCount >= MAX_FILES };
   }
 
   execGit(args, options = {}) {

@@ -18,6 +18,10 @@ export interface DashboardSettings {
   historyEnabled: boolean;
   maxHistoryEntries: number;
   pointerInjectMode: "touch" | "mouse";
+  ignorePatterns: string[];
+  viewportCompact: boolean;
+  dockInterval: number;
+  enabledDocks: string[];
 }
 
 const DEFAULTS: DashboardSettings = {
@@ -36,6 +40,10 @@ const DEFAULTS: DashboardSettings = {
   historyEnabled: true,
   maxHistoryEntries: 200,
   pointerInjectMode: "touch",
+  ignorePatterns: ["*.uid"],
+  viewportCompact: false,
+  dockInterval: 0.5,
+  enabledDocks: ["filesystem", "inspector"],
 };
 
 function loadSettings(): DashboardSettings {
@@ -63,6 +71,14 @@ function loadSettings(): DashboardSettings {
       pointerInjectMode: ["touch", "mouse"].includes(parsed.pointerInjectMode || "")
         ? (parsed.pointerInjectMode as DashboardSettings["pointerInjectMode"])
         : DEFAULTS.pointerInjectMode,
+      ignorePatterns: Array.isArray(parsed.ignorePatterns)
+        ? parsed.ignorePatterns.filter((p) => typeof p === "string" && p.trim() !== "")
+        : DEFAULTS.ignorePatterns,
+      viewportCompact: typeof parsed.viewportCompact === "boolean" ? parsed.viewportCompact : DEFAULTS.viewportCompact,
+      dockInterval: Math.max(0.05, Math.min(2.0, Number(parsed.dockInterval) || DEFAULTS.dockInterval)),
+      enabledDocks: Array.isArray(parsed.enabledDocks)
+        ? parsed.enabledDocks.filter((d) => typeof d === "string" && d.trim() !== "")
+        : DEFAULTS.enabledDocks,
     };
   } catch {
     return DEFAULTS;
@@ -92,6 +108,10 @@ export function useSettings(): {
   setHistoryEnabled: (value: boolean) => void;
   setMaxHistoryEntries: (value: number) => void;
   setPointerInjectMode: (value: DashboardSettings["pointerInjectMode"]) => void;
+  setIgnorePatterns: (value: string[]) => void;
+  setViewportCompact: (value: boolean) => void;
+  setDockInterval: (value: number) => void;
+  setEnabledDocks: (value: string[]) => void;
 } {
   const [settings, setSettings] = useState<DashboardSettings>(loadSettings);
 
@@ -165,5 +185,27 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, pointerInjectMode: value }));
   }, []);
 
-  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setUseMjpeg, setDeduplicateFrames, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode };
+  const setIgnorePatterns = useCallback((value: string[]) => {
+    const cleaned = value.map((p) => p.trim()).filter(Boolean);
+    setSettings((prev) => ({ ...prev, ignorePatterns: cleaned }));
+  }, []);
+
+  const setViewportCompact = useCallback((value: boolean) => {
+    setSettings((prev) => ({ ...prev, viewportCompact: value }));
+  }, []);
+
+  const setDockInterval = useCallback((value: number) => {
+    const clamped = Math.max(0.05, Math.min(2.0, value));
+    setSettings((prev) => ({ ...prev, dockInterval: clamped }));
+  }, []);
+
+  const setEnabledDocks = useCallback((value: string[] | ((prev: string[]) => string[])) => {
+    setSettings((prev) => {
+      const next = typeof value === "function" ? (value as (prev: string[]) => string[])(prev.enabledDocks) : value;
+      const cleaned = next.map((d) => d.trim()).filter(Boolean);
+      return { ...prev, enabledDocks: cleaned };
+    });
+  }, []);
+
+  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setUseMjpeg, setDeduplicateFrames, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode, setIgnorePatterns, setViewportCompact, setDockInterval, setEnabledDocks };
 }
