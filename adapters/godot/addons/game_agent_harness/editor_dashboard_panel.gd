@@ -5,6 +5,9 @@ class_name GameAgentHarnessDashboardPanel
 
 signal dashboard_started(url: String)
 signal dashboard_stopped
+signal log_level_changed(level: String)
+
+const _LOG_LEVELS: Array[String] = ["debug", "info", "warning", "error", "off"]
 
 var _process_id: int = -1
 var _harness_path: String = ""
@@ -16,6 +19,8 @@ var _start_button: Button
 var _stop_button: Button
 var _open_button: Button
 var _runtime_toggle: CheckButton
+var _lan_toggle: CheckButton
+var _log_level_option: OptionButton
 var _path_line: LineEdit
 var _intake_url_line: LineEdit
 var _poll_timer: Timer
@@ -59,6 +64,29 @@ func _build_ui() -> void:
 	_runtime_toggle.button_pressed = _read_project_setting("game_agent_harness/runtime_capture_enabled", true)
 	_runtime_toggle.toggled.connect(_on_runtime_toggled)
 	toggles.add_child(_runtime_toggle)
+
+	var lan_toggle := CheckButton.new()
+	lan_toggle.text = "LAN mode"
+	lan_toggle.tooltip_text = "Bind dashboard and intake to all network interfaces (0.0.0.0)."
+	lan_toggle.button_pressed = _read_project_setting("game_agent_harness/lan_mode", false)
+	lan_toggle.toggled.connect(_on_lan_toggled)
+	toggles.add_child(lan_toggle)
+	_lan_toggle = lan_toggle
+
+	var level_label := Label.new()
+	level_label.text = "Log level:"
+	level_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	toggles.add_child(level_label)
+
+	_log_level_option = OptionButton.new()
+	_log_level_option.tooltip_text = "Control how much Game Agent Harness logs in the Godot Output panel."
+	for level in _LOG_LEVELS:
+		_log_level_option.add_item(level.capitalize(), _LOG_LEVELS.find(level))
+	var stored_level := str(ProjectSettings.get_setting("game_agent_harness/log_level", "info"))
+	var stored_index := _LOG_LEVELS.find(stored_level)
+	_log_level_option.selected = stored_index if stored_index >= 0 else 1
+	_log_level_option.item_selected.connect(_on_log_level_changed)
+	toggles.add_child(_log_level_option)
 
 	var path_label := Label.new()
 	path_label.text = "Harness path:"
@@ -155,6 +183,8 @@ func start_harness() -> void:
 		args.append_array(["--dashboard-port", str(dashboard_port)])
 	if intake_port != 8765:
 		args.append_array(["--port", str(intake_port)])
+	if _lan_toggle != null and _lan_toggle.button_pressed:
+		args.append_array(["--host", "0.0.0.0", "--dashboard-host", "0.0.0.0"])
 
 	var pid := OS.create_process("node", args, false)
 	if pid <= 0:
@@ -198,6 +228,33 @@ func _on_intake_url_changed(new_text: String) -> void:
 func _on_runtime_toggled(enabled: bool) -> void:
 	_set_capture_enabled("runtime_capture_enabled", enabled)
 
+func _on_lan_toggled(enabled: bool) -> void:
+	if not ProjectSettings.has_setting("game_agent_harness/lan_mode"):
+		ProjectSettings.set_initial_value("game_agent_harness/lan_mode", false)
+	ProjectSettings.set_setting("game_agent_harness/lan_mode", enabled)
+	ProjectSettings.save()
+
+func _on_log_level_changed(index: int) -> void:
+	if index < 0 or index >= _LOG_LEVELS.size():
+		return
+	var level := _LOG_LEVELS[index]
+	if not ProjectSettings.has_setting("game_agent_harness/log_level"):
+		ProjectSettings.set_initial_value("game_agent_harness/log_level", "info")
+	ProjectSettings.set_setting("game_agent_harness/log_level", level)
+	ProjectSettings.save()
+	log_level_changed.emit(level)
+
+func set_runtime_capture_enabled(enabled: bool) -> void:
+	if _runtime_toggle != null:
+		_runtime_toggle.button_pressed = enabled
+
+func set_log_level(level: String) -> void:
+	if _log_level_option == null:
+		return
+	var index := _LOG_LEVELS.find(level.to_lower())
+	if index >= 0:
+		_log_level_option.selected = index
+
 func _set_capture_enabled(key: String, enabled: bool) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/" + key):
 		ProjectSettings.set_initial_value("game_agent_harness/" + key, true)
@@ -213,6 +270,13 @@ func _poll_process() -> void:
 		_update_ui()
 		return
 	_status_label.text = "Status: running at %s" % _dashboard_url
+
+func is_harness_running() -> bool:
+	return _process_id > 0 and OS.is_process_running(_process_id)
+
+func set_status_text(text: String) -> void:
+	if _status_label != null:
+		_status_label.text = text
 
 func _update_ui() -> void:
 	var running := _process_id > 0

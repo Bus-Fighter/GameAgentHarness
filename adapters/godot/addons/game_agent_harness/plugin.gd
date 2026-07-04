@@ -20,7 +20,6 @@ var client: GameAgentHarnessClient
 var editor_selection: EditorSelection
 var dashboard_panel: GameAgentHarnessDashboardPanel
 var _runtime_running := false
-var _log_file: FileAccess = null
 var _log_file_path := ""
 var _log_poll_timer := 0.0
 var _log_poll_interval := 1.0
@@ -45,6 +44,7 @@ var _dock_streams: Dictionary = {}
 var _dock_max_streams := 4
 var _dock_root_image: Image = null
 var _dock_root_dirty := false
+var _streaming_state_before_stop: Dictionary = {}
 
 func _enter_tree() -> void:
 	client = ClientScript.new()
@@ -69,11 +69,13 @@ func _enter_tree() -> void:
 	dashboard_panel = DashboardPanelScript.new()
 	dashboard_panel.name = "GameAgentHarnessDashboard"
 	add_control_to_dock(DOCK_SLOT_LEFT_UL, dashboard_panel)
+	dashboard_panel.dashboard_started.connect(_on_dashboard_started)
+	dashboard_panel.dashboard_stopped.connect(_on_dashboard_stopped)
+	dashboard_panel.log_level_changed.connect(_set_log_level)
 
 	add_tool_menu_item("Start Game Agent Harness", _on_tool_menu_start)
 
 	_enable_file_logging()
-	_open_log_file()
 
 	_report_editor_identity()
 	_client_reported = client.connected if client != null else false
@@ -146,13 +148,57 @@ func _on_tool_menu_start(_ud = null) -> void:
 	if dashboard_panel != null:
 		dashboard_panel.start_harness()
 
+func _on_dashboard_started(_url: String) -> void:
+	_log_debug("dashboard started; restoring streaming state")
+	var runtime_capture := _read_project_setting_bool("game_agent_harness/runtime_capture_enabled", true)
+	var editor_viewport := _streaming_state_before_stop.get("editor_viewport", _read_project_setting_bool("game_agent_harness/editor_viewport_enabled", false))
+	_set_runtime_capture_enabled(runtime_capture)
+	_editor_viewport_enabled = editor_viewport
+	ProjectSettings.set_setting("game_agent_harness/editor_viewport_enabled", editor_viewport)
+	_save_project_settings()
+	if dashboard_panel != null:
+		dashboard_panel.set_runtime_capture_enabled(runtime_capture)
+
+func _on_dashboard_stopped() -> void:
+	_log_debug("dashboard stopped; pausing streaming")
+	_streaming_state_before_stop = {
+		"runtime_capture": _read_project_setting_bool("game_agent_harness/runtime_capture_enabled", true),
+		"editor_viewport": _editor_viewport_enabled,
+	}
+	_set_runtime_capture_enabled(false)
+	_editor_viewport_enabled = false
+	ProjectSettings.set_setting("game_agent_harness/editor_viewport_enabled", false)
+	for id in _dock_streams:
+		var s: Dictionary = _dock_streams[id]
+		s.enabled = false
+	_save_project_settings()
+	if dashboard_panel != null:
+		dashboard_panel.set_runtime_capture_enabled(false)
+
+func _set_runtime_capture_enabled(enabled: bool) -> void:
+	if not ProjectSettings.has_setting("game_agent_harness/runtime_capture_enabled"):
+		ProjectSettings.set_initial_value("game_agent_harness/runtime_capture_enabled", true)
+	ProjectSettings.set_setting("game_agent_harness/runtime_capture_enabled", enabled)
+	var runtime := get_tree().root.get_node_or_null(RuntimeAutoloadName)
+	if runtime != null and runtime.has_method("_on_harness_control"):
+		runtime._on_harness_control({ "action": "runtime_capture", "enabled": enabled })
+
+func _read_project_setting_bool(key: String, default_value: bool) -> bool:
+	if ProjectSettings.has_setting(key):
+		return bool(ProjectSettings.get_setting(key))
+	return default_value
+
 func _set_log_level(level: String) -> void:
 	var normalized := level.to_lower()
 	if not _LOG_LEVELS.has(normalized):
 		return
 	_log_level = normalized
+	if not ProjectSettings.has_setting("game_agent_harness/log_level"):
+		ProjectSettings.set_initial_value("game_agent_harness/log_level", "info")
 	ProjectSettings.set_setting("game_agent_harness/log_level", _log_level)
 	_save_project_settings()
+	if dashboard_panel != null:
+		dashboard_panel.set_log_level(_log_level)
 	_log_info("log level set to %s" % _log_level)
 
 func _save_project_settings() -> void:
@@ -160,11 +206,12 @@ func _save_project_settings() -> void:
 	_settings_save_timer = 0.0
 
 func _should_log(level: String) -> bool:
-	if _log_level == "off":
+	var current := str(ProjectSettings.get_setting("game_agent_harness/log_level", "info"))
+	if current == "off":
 		return false
-	if not _LOG_LEVELS.has(level):
+	if not _LOG_LEVELS.has(level) or not _LOG_LEVELS.has(current):
 		return true
-	return _LOG_LEVELS[level] >= _LOG_LEVELS[_log_level]
+	return _LOG_LEVELS[level] >= _LOG_LEVELS[current]
 
 func _log(level: String, message: String) -> void:
 	if not _should_log(level):
@@ -381,8 +428,10 @@ func _enable_file_logging() -> void:
 		ProjectSettings.set_setting("debug/file_logging/log_path", log_path)
 		changed = true
 	_log_file_path = _resolve_log_path(log_path)
+	# Defer ProjectSettings.save() to avoid writing settings while a play session
+	# is starting; this prevents the running game from seeing a mutated project.godot.
 	if changed:
-		ProjectSettings.save()
+		_save_project_settings()
 
 func _resolve_log_path(log_path: String) -> String:
 	if log_path.begins_with("user://"):
@@ -391,7 +440,7 @@ func _resolve_log_path(log_path: String) -> String:
 		return user_dir.path_join(relative).simplify_path()
 	return ProjectSettings.globalize_path(log_path).simplify_path()
 
-func _open_log_file() -> void:
+func _tail_log_file() -> void:
 	if _log_file_path.is_empty():
 		return
 	var dir := _log_file_path.get_base_dir()
@@ -399,29 +448,24 @@ func _open_log_file() -> void:
 		DirAccess.make_dir_recursive_absolute(dir)
 	if not FileAccess.file_exists(_log_file_path):
 		return
-	_log_file = FileAccess.open(_log_file_path, FileAccess.READ)
-	if _log_file != null:
-		_log_file.seek_end()
-		_last_log_length = _log_file.get_length()
 
-func _tail_log_file() -> void:
-	if _log_file == null:
-		_open_log_file()
+	var file := FileAccess.open(_log_file_path, FileAccess.READ)
+	if file == null:
+		var err := FileAccess.get_open_error()
+		_log_debug("log tail: could not open log file (err=%d), will retry" % err)
 		return
-	if _log_file.get_error() != OK:
-		_log_file = null
-		_open_log_file()
-		return
-	var current_length := _log_file.get_length()
+
+	var current_length := file.get_length()
 	if current_length < _last_log_length:
-		_log_file = null
-		_open_log_file()
-		return
+		# Log file was truncated (e.g., new editor/game session); restart from beginning.
+		_last_log_length = 0
 	if current_length == _last_log_length:
+		file.close()
 		return
-	_last_log_length = current_length
-	while _log_file.get_position() < current_length:
-		var line := _log_file.get_line()
+
+	file.seek(_last_log_length)
+	while file.get_position() < current_length:
+		var line := file.get_line()
 		if line.is_empty():
 			continue
 		var level := _parse_log_level(line)
@@ -429,6 +473,9 @@ func _tail_log_file() -> void:
 			"level": level,
 			"message": line
 		})
+
+	_last_log_length = current_length
+	file.close()
 
 func _parse_log_level(line: String) -> String:
 	var trimmed := line.strip_edges()
