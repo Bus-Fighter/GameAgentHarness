@@ -1,3 +1,17 @@
+export interface HarnessDockInfo {
+  id: string;
+  title: string;
+  visible?: boolean;
+}
+
+export interface EditorDocksMessage {
+  kind: "event";
+  event: {
+    type: "editor.docks";
+    data: { docks: HarnessDockInfo[] };
+  };
+}
+
 export interface FrameMessage {
   kind: "frame";
   seq: number;

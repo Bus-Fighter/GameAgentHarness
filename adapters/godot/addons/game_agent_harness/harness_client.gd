@@ -17,6 +17,7 @@ var project_name := ""
 var project_root := ""
 var _reconnect_timer := 0.0
 var _should_reconnect := true
+var _deduplicate_frames := true
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 
 func _ready() -> void:
@@ -34,7 +35,9 @@ func _process(delta: float) -> void:
 		if not connected:
 			connected = true
 			_reconnect_timer = 0.0
-			send_event("engine.connected", {})
+			send_event("engine.connected", {
+				"engineMode": "editor" if Engine.is_editor_hint() else "runtime"
+			})
 			send_event("project.opened", {
 				"projectName": project_name,
 				"projectRoot": project_root
@@ -84,14 +87,33 @@ func send_event(event_type: String, data: Dictionary = {}, entity: Dictionary = 
 	}
 	send_message(message)
 
-func send_frame(image: Image, source: String = "viewport", persist: bool = false) -> void:
+var _last_frame_hash: int = 0
+var _last_frame_hash_count: int = 0
+var _last_image_sample_hash: int = 0
+
+func send_frame(image: Image, source: String = "viewport", persist: bool = false, force: bool = false, max_dimension: int = -1, quality: float = -1.0) -> void:
 	if image == null:
 		return
-	var resized := _resize_image(image)
-	var quality: float = float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
-	var buffer := resized.save_jpg_to_buffer(quality)
+	var sample_hash := _hash_image_samples(image)
+	if _deduplicate_frames and not force and not persist and sample_hash == _last_image_sample_hash:
+		return
+	_last_image_sample_hash = sample_hash
+	var limit := max_dimension if max_dimension > 0 else int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
+	var resized := _resize_image(image, limit)
+	var q := quality if quality >= 0.0 else float(ProjectSettings.get_setting("game_agent_harness/frame_quality", DEFAULT_FRAME_QUALITY))
+	var buffer := resized.save_jpg_to_buffer(q)
 	if buffer.size() == 0:
 		return
+
+	var hash := _hash_buffer(buffer)
+	if _deduplicate_frames and not force and not persist and hash == _last_frame_hash:
+		_last_frame_hash_count += 1
+		# Heartbeat: send a frame every ~5 seconds even if identical so the dashboard stream stays alive.
+		if _last_frame_hash_count < 25:
+			return
+	_last_frame_hash = hash
+	_last_frame_hash_count = 0
+
 	var message := {
 		"kind": "frame",
 		"format": "jpeg",
@@ -113,9 +135,33 @@ func send_frame(image: Image, source: String = "viewport", persist: bool = false
 	}
 	send_message(message)
 
-func _resize_image(image: Image) -> Image:
+func _hash_buffer(buffer: PackedByteArray) -> int:
+	var h := 0
+	var step := maxi(buffer.size() / 1024, 1)
+	var i := 0
+	while i < buffer.size():
+		h = (h * 31 + buffer[i]) & 0x7FFFFFFF
+		i += step
+	return h
+
+func _hash_image_samples(image: Image) -> int:
+	var w := image.get_width()
+	var h := image.get_height()
+	if w <= 0 or h <= 0:
+		return 0
+	var h_out := 0
+	var samples := 8
+	for i in range(samples):
+		var x := (w * (i + 1)) / (samples + 1)
+		var y := (h * ((i * 7) % samples + 1)) / (samples + 1)
+		var color := image.get_pixel(x, y)
+		h_out = (h_out * 31 + color.to_rgba32()) & 0x7FFFFFFF
+	return h_out
+
+func _resize_image(image: Image, limit: int = -1) -> Image:
 	var max_dim := max(image.get_width(), image.get_height())
-	var limit := int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
+	if limit <= 0:
+		limit = int(ProjectSettings.get_setting("game_agent_harness/max_frame_dimension", DEFAULT_MAX_FRAME_DIMENSION))
 	if limit <= 0 or max_dim <= limit:
 		return image
 	var scale: float = float(limit) / float(max_dim)
@@ -127,12 +173,10 @@ func _resize_image(image: Image) -> Image:
 
 func send_message(message: Dictionary) -> void:
 	var text := JSON.stringify(message)
-	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.send_text(text)
-	else:
-		queue.append(text)
-		if queue.size() > 512:
-			queue.pop_front()
+	queue.append(text)
+	if queue.size() > 512:
+		queue.pop_front()
+	_flush_queue()
 
 func _receive_messages() -> void:
 	while socket.get_available_packet_count() > 0:
@@ -159,6 +203,8 @@ func _handle_control_message(message: Dictionary) -> void:
 	_log_debug("client received control: %s" % action)
 	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
+	elif action == "frame_deduplication":
+		_set_frame_deduplication(bool(message.get("enabled", true)))
 	# Let the parent plugin/runtime handle everything else (play, stop, snapshot, etc.)
 	var parent := get_parent()
 	if parent != null and parent.has_method("_on_harness_control"):
@@ -166,6 +212,10 @@ func _handle_control_message(message: Dictionary) -> void:
 		parent._on_harness_control(message)
 	else:
 		_log_debug("no parent handler for control: %s" % action)
+
+func _set_frame_deduplication(enabled: bool) -> void:
+	_deduplicate_frames = enabled
+	_log_info("frame deduplication %s from dashboard" % ("enabled" if enabled else "disabled"))
 
 func _set_capture_enabled(key: String, enabled: bool) -> void:
 	if not ProjectSettings.has_setting("game_agent_harness/" + key):
@@ -178,7 +228,14 @@ func _set_capture_enabled(key: String, enabled: bool) -> void:
 
 func _flush_queue() -> void:
 	while queue.size() > 0 and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.send_text(queue.pop_front())
+		var text := queue[0]
+		var err := socket.send_text(text)
+		if err != OK:
+			if err == ERR_OUT_OF_MEMORY:
+				# Outbound buffer is full; back off and retry next frame.
+				break
+			_log_warning("websocket send error %d, dropping message" % err)
+		queue.pop_front()
 
 func _detect_project_name() -> String:
 	var configured := str(ProjectSettings.get_setting("application/config/name", ""))

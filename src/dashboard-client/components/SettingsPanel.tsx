@@ -1,4 +1,4 @@
-import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, Search, Radio, History } from "lucide-react";
+import { X, Type, Minus, Plus, ScrollText, Filter, ListRestart, MonitorPlay, Timer, LayoutGrid, Search, Radio, History, MousePointerClick, Info } from "lucide-react";
 import { ViewTransition } from "react";
 import type { DashboardSettings } from "../hooks/useSettings";
 
@@ -13,10 +13,15 @@ interface SettingsPanelProps {
   onEditorViewportEnabledChange: (value: boolean) => void;
   onEditorViewportIntervalChange: (value: number) => void;
   onRuntimeViewportIntervalChange: (value: number) => void;
+  onEvidenceFrameIntervalChange: (value: number) => void;
+  onUseMjpegChange: (value: boolean) => void;
+  onDeduplicateFramesChange: (value: boolean) => void;
   onInspectorEnabledChange: (value: boolean) => void;
   onSignalsEnabledChange: (value: boolean) => void;
   onHistoryEnabledChange: (value: boolean) => void;
   onMaxHistoryEntriesChange: (value: number) => void;
+  onPointerInjectModeChange: (value: DashboardSettings["pointerInjectMode"]) => void;
+  onDockIntervalChange: (value: number) => void;
 }
 
 export function SettingsPanel({
@@ -30,10 +35,15 @@ export function SettingsPanel({
   onEditorViewportEnabledChange,
   onEditorViewportIntervalChange,
   onRuntimeViewportIntervalChange,
+  onEvidenceFrameIntervalChange,
+  onUseMjpegChange,
+  onDeduplicateFramesChange,
   onInspectorEnabledChange,
   onSignalsEnabledChange,
   onHistoryEnabledChange,
   onMaxHistoryEntriesChange,
+  onPointerInjectModeChange,
+  onDockIntervalChange,
 }: SettingsPanelProps) {
   if (!open) return null;
 
@@ -194,7 +204,90 @@ export function SettingsPanel({
                   </button>
                 </div>
               </div>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <Timer className="h-3.5 w-3.5" />
+                  Evidence interval (s)
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onEvidenceFrameIntervalChange(settings.evidenceFrameInterval - 0.5)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[4ch] text-center text-sm font-semibold text-[var(--text)]">{settings.evidenceFrameInterval.toFixed(1)}s</span>
+                  <button
+                    type="button"
+                    onClick={() => onEvidenceFrameIntervalChange(settings.evidenceFrameInterval + 0.5)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={settings.useMjpeg}
+                  onChange={(e) => onUseMjpegChange(e.target.checked)}
+                />
+                Use MJPEG stream (fallback to polling if unsupported)
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={settings.deduplicateFrames}
+                  onChange={(e) => onDeduplicateFramesChange(e.target.checked)}
+                />
+                Deduplicate identical frames (disable for smoother static scenes)
+              </label>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  Viewport pointer injects as
+                </div>
+                <select
+                  value={settings.pointerInjectMode}
+                  onChange={(e) => onPointerInjectModeChange(e.target.value as DashboardSettings["pointerInjectMode"])}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                >
+                  <option value="touch">Touch event</option>
+                  <option value="mouse">Mouse button</option>
+                </select>
+              </div>
             </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
+                <LayoutGrid className="h-4 w-4 text-[var(--accent)]" />
+                Godot docks
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <Timer className="h-3.5 w-3.5" />
+                  Dock stream interval (s)
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onDockIntervalChange(settings.dockInterval - 0.05)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[4ch] text-center text-sm font-semibold text-[var(--text)]">{settings.dockInterval.toFixed(2)}s</span>
+                  <button
+                    type="button"
+                    onClick={() => onDockIntervalChange(settings.dockInterval + 0.05)}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
                 <Search className="h-4 w-4 text-[var(--accent)]" />
@@ -253,6 +346,22 @@ export function SettingsPanel({
                   >
                     <Plus className="h-4 w-4" />
                   </button>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--text)]">
+                <Info className="h-4 w-4 text-[var(--accent)]" />
+                System info
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-[var(--text)]">
+                  <span className="text-[var(--muted)]">Version</span>
+                  <span className="font-mono">{__APP_VERSION__}</span>
+                </div>
+                <div className="flex justify-between text-[var(--text)]">
+                  <span className="text-[var(--muted)]">Built</span>
+                  <span>{new Date(__BUILD_DATE__).toLocaleString()}</span>
                 </div>
               </div>
             </div>

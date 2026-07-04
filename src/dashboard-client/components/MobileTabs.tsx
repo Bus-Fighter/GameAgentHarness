@@ -1,4 +1,4 @@
-import { Monitor, Zap, Image, FileText, Search } from "lucide-react";
+import { Monitor, Zap, Image, FileText, Search, LayoutGrid } from "lucide-react";
 
 interface MobileTabsProps {
   activeTab: string;
@@ -9,6 +9,7 @@ const TABS = [
   { id: "live", label: "Live", icon: Monitor },
   { id: "events", label: "Events", icon: Zap },
   { id: "evidence", label: "Evidence", icon: Image },
+  { id: "docks", label: "Docks", icon: LayoutGrid },
   { id: "inspect", label: "Inspect", icon: Search },
   { id: "files", label: "Files", icon: FileText },
 ];

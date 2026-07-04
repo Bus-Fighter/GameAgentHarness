@@ -8,6 +8,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { HarnessHost } from "../src/host/harness-host.js";
 import { encodeTextFrame, decodeFrames } from "../src/host/websocket-codec.js";
+import { FrameStore } from "../src/dashboard/frame-store.js";
 
 const TEST_HOST = "127.0.0.1";
 const INTAKE_PORT = 18765;
@@ -528,3 +529,127 @@ async function fetchJson(urlPath, port) {
   assert.equal(res.headers["content-type"], "application/json");
   return JSON.parse(res.body.toString("utf8"));
 }
+
+function makeTestJpeg(tag) {
+  return Buffer.from(`jpeg-${tag}-${Date.now()}`);
+}
+
+async function sendFrame(ws, source, buffer) {
+  ws.send({
+    kind: "frame",
+    source,
+    format: "jpeg",
+    data: buffer.toString("base64"),
+    width: 100,
+    height: 100,
+  });
+}
+
+test("FrameStore isolates frames by source and prefers runtime as primary", () => {
+  const store = new FrameStore();
+  const runtime = makeTestJpeg("runtime");
+  const editor = makeTestJpeg("editor");
+  store.setFrame({ buffer: runtime, source: "runtime" });
+  store.setFrame({ buffer: editor, source: "editor" });
+  assert.equal(store.getFrame("runtime").buffer, runtime);
+  assert.equal(store.getFrame("editor").buffer, editor);
+  assert.equal(store.getFrame("missing"), null);
+  assert.equal(store.getPrimaryFrame().buffer, runtime);
+});
+
+test("FrameStore primary frame ignores dock frames", () => {
+  const store = new FrameStore();
+  const dock = makeTestJpeg("dock");
+  store.setFrame({ buffer: dock, source: "dock:filesystem" });
+  assert.equal(store.getPrimaryFrame(), null);
+  const editor = makeTestJpeg("editor");
+  store.setFrame({ buffer: editor, source: "editor" });
+  assert.equal(store.getPrimaryFrame().buffer, editor);
+});
+
+test("FrameStore getFrame without source returns latest frame", () => {
+  const store = new FrameStore();
+  const editor = makeTestJpeg("editor");
+  const runtime = makeTestJpeg("runtime");
+  store.setFrame({ buffer: editor, source: "editor" });
+  store.setFrame({ buffer: runtime, source: "runtime" });
+  assert.equal(store.getFrame().buffer, runtime);
+});
+
+test("api/live/frame returns per-source frames", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-frame-source-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const hello = await engine.nextMessage();
+  assert.equal(hello.kind, "host.hello");
+
+  const runtimeFrame = makeTestJpeg("runtime");
+  const editorFrame = makeTestJpeg("editor");
+  await sendFrame(engine, "runtime", runtimeFrame);
+  await sendFrame(engine, "editor", editorFrame);
+
+  const runtimeRes = await fetchHttp(`/api/live/frame?source=runtime`, DASHBOARD_PORT);
+  assert.equal(runtimeRes.status, 200);
+  assert.equal(runtimeRes.headers["content-type"], "image/jpeg");
+  assert.ok(runtimeRes.body.equals(runtimeFrame));
+
+  const editorRes = await fetchHttp(`/api/live/frame?source=editor`, DASHBOARD_PORT);
+  assert.equal(editorRes.status, 200);
+  assert.ok(editorRes.body.equals(editorFrame));
+
+  engine.close();
+});
+
+test("api/live/frame without source returns primary frame", async (t) => {
+  const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-frame-primary-"));
+  const host = new HarnessHost({
+    host: TEST_HOST,
+    port: INTAKE_PORT,
+    traceDir: traceRoot,
+    dashboard: true,
+    dashboardHost: TEST_HOST,
+    dashboardPort: DASHBOARD_PORT,
+  });
+  await host.start();
+  t.after(() => {
+    host.stop();
+    try {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    } catch {}
+  });
+
+  const engine = await connectWebSocket(`ws://${TEST_HOST}:${INTAKE_PORT}`);
+  const hello = await engine.nextMessage();
+  assert.equal(hello.kind, "host.hello");
+
+  const editorFrame = makeTestJpeg("editor");
+  await sendFrame(engine, "editor", editorFrame);
+
+  const primaryAfterEditor = await fetchHttp(`/api/live/frame`, DASHBOARD_PORT);
+  assert.equal(primaryAfterEditor.status, 200);
+  assert.ok(primaryAfterEditor.body.equals(editorFrame));
+
+  const runtimeFrame = makeTestJpeg("runtime");
+  await sendFrame(engine, "runtime", runtimeFrame);
+
+  const primaryAfterRuntime = await fetchHttp(`/api/live/frame`, DASHBOARD_PORT);
+  assert.equal(primaryAfterRuntime.status, 200);
+  assert.ok(primaryAfterRuntime.body.equals(runtimeFrame));
+
+  engine.close();
+});

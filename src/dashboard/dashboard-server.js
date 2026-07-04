@@ -7,9 +7,14 @@ import { buildHandshakeResponse, decodeFrames, encodeCloseFrame, encodeTextFrame
 import { ArtifactStore } from "../core/artifact-store.js";
 import { readTrace, resolveTraceId } from "../core/trace-reader.js";
 import { buildCurrentContext } from "../core/context-builder.js";
+import { getLanIp } from "../core/network.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
+const PLACEHOLDER_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8Af//Z",
+  "base64",
+);
 
 function notFound(res) {
   res.writeHead(404, { "Content-Type": "text/plain" });
@@ -38,8 +43,82 @@ function serveFile(res, filePath, contentType) {
   res.end(data);
 }
 
+const ALWAYS_SKIP_DIRS = new Set([".git", ".godot", "node_modules", "dist"]);
+
+function globToRegex(pattern) {
+  let pat = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  pat = pat.replace(/\*\*/g, "{{GLOBSTAR}}");
+  pat = pat.replace(/\*/g, "[^/]*");
+  pat = pat.replace(/\?/g, "[^/]");
+  pat = pat.replace(/{{GLOBSTAR}}/g, ".*");
+  return new RegExp("^" + pat + "$", "i");
+}
+
+function shouldIgnore(relPath, ignorePatterns) {
+  if (!ignorePatterns || ignorePatterns.length === 0) return false;
+  const normalized = relPath.replace(/\\/g, "/");
+  const basename = path.posix.basename(normalized);
+  for (const pattern of ignorePatterns) {
+    if (!pattern) continue;
+    try {
+      const regex = globToRegex(pattern);
+      if (pattern.includes("/")) {
+        if (regex.test(normalized)) return true;
+      } else if (regex.test(basename)) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+function parseIgnorePatterns(url) {
+  const raw = url.searchParams.get("ignore") || "";
+  if (!raw) return [];
+  return raw.split(",").map((p) => decodeURIComponent(p.trim())).filter(Boolean);
+}
+
+function isBinaryContent(buffer) {
+  for (let i = 0; i < Math.min(buffer.length, 8192); i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
+function isProtectedPath(rel) {
+  const normalized = rel.replace(/\\/g, "/");
+  if (normalized === "" || normalized === ".") return true;
+  if (normalized === ".git" || normalized.startsWith(".git/")) return true;
+  return false;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesGlob(relPath, pattern) {
+  if (!pattern) return true;
+  const normalized = relPath.replace(/\\/g, "/");
+  const hasSlash = pattern.includes("/");
+  const regex = globToRegex(hasSlash ? pattern : `**/${pattern}`);
+  return regex.test(normalized);
+}
+
+function createContentMatcher(query, caseSensitive, wholeWord) {
+  if (wholeWord) {
+    const pattern = `\\b${escapeRegex(query)}\\b`;
+    const flags = caseSensitive ? "g" : "gi";
+    const re = new RegExp(pattern, flags);
+    return (line) => re.test(line);
+  }
+  const q = caseSensitive ? query : query.toLowerCase();
+  return (line) => (caseSensitive ? line.includes(query) : line.toLowerCase().includes(q));
+}
+
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, onControlMessage = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, editorManaged = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -47,12 +126,47 @@ export class DashboardServer {
     this.store = new ArtifactStore(traceDir);
     this.frameStore = null;
     this.trace = null;
+    this.profile = profile;
     this.server = null;
     this.clients = new Set();
     this.sseClients = new Set();
+    this.mjpegClients = new Set();
     this.engineClientCount = engineClientCount;
     this.lastEngineAt = lastEngineAt;
+    this.editorActive = editorActive;
+    this.editorManaged = editorManaged;
     this.onControlMessage = onControlMessage;
+    this.getRuntimeContext = getRuntimeContext;
+    this.onFlushTrace = onFlushTrace;
+  }
+
+  broadcastStatus() {
+    const frame = this.frameStore?.getPrimaryFrame();
+    const status = {
+      kind: "status",
+      traceActive: Boolean(this.trace && !this.trace.endedAt),
+      traceId: this.trace?.traceId ?? null,
+      dashboardClients: this.clients.size + this.sseClients.size,
+      dashboardWsClients: this.clients.size,
+      dashboardSseClients: this.sseClients.size,
+      engineClients: this.engineClientCount?.() ?? 0,
+      lastEngineAt: this.lastEngineAt?.() ?? null,
+      editorActive: Boolean(this.editorActive?.()),
+      editorManaged: Boolean(this.editorManaged?.()),
+      intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
+      latestFrame: frame
+        ? {
+            contentType: frame.contentType,
+            source: frame.source,
+            width: frame.width,
+            height: frame.height,
+            seq: frame.seq,
+            traceId: frame.traceId,
+            receivedAt: frame.receivedAt,
+          }
+        : null,
+    };
+    this.broadcast(status);
   }
 
   setFrameStore(frameStore) {
@@ -64,11 +178,13 @@ export class DashboardServer {
     if (trace) {
       this.broadcast({ kind: "trace", traceId: trace.traceId, active: !trace.endedAt });
     }
+    this.broadcastStatus();
   }
 
   clearTrace() {
     this.trace = null;
     this.broadcast({ kind: "trace", traceId: null, active: false });
+    this.broadcastStatus();
   }
 
   start() {
@@ -97,6 +213,12 @@ export class DashboardServer {
       } catch {}
     }
     this.sseClients.clear();
+    for (const client of this.mjpegClients) {
+      try {
+        client.res.end();
+      } catch {}
+    }
+    this.mjpegClients.clear();
     this.server?.close();
   }
 
@@ -105,7 +227,7 @@ export class DashboardServer {
     const pathname = url.pathname;
 
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.method === "OPTIONS") {
@@ -149,8 +271,13 @@ export class DashboardServer {
       return;
     }
 
+    if (pathname === "/api/scenes") {
+      json(res, { ok: true, scenes: this._listScenes() });
+      return;
+    }
+
     if (pathname === "/api/status") {
-      const frame = this.frameStore?.getFrame();
+      const frame = this.frameStore?.getPrimaryFrame();
       json(res, {
         traceActive: Boolean(this.trace && !this.trace.endedAt),
         traceId: this.trace?.traceId ?? null,
@@ -159,7 +286,9 @@ export class DashboardServer {
         dashboardSseClients: this.sseClients.size,
         engineClients: this.engineClientCount?.() ?? 0,
         lastEngineAt: this.lastEngineAt?.() ?? null,
-        intakeUrl: `ws://${this.host === "0.0.0.0" ? "*" : this.host}:${this.intakePort ?? 8765}`,
+        editorActive: Boolean(this.editorActive?.()),
+        editorManaged: Boolean(this.editorManaged?.()),
+        intakeUrl: `ws://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.intakePort ?? 8765}`,
         latestFrame: frame
           ? {
               contentType: frame.contentType,
@@ -191,6 +320,7 @@ export class DashboardServer {
       }
 
       if (segments[0] === "events") {
+        this.onFlushTrace?.();
         const trace = readTrace(this.store, traceId);
         const since = Number(url.searchParams.get("since") ?? 0);
         const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : null;
@@ -225,8 +355,15 @@ export class DashboardServer {
       }
     }
 
+    if (pathname === "/api/live/frame.mjpeg") {
+      this.handleMjpeg(req, res);
+      return;
+    }
+
     if (pathname === "/api/live/frame") {
-      const frame = this.frameStore?.getFrame();
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const source = url.searchParams.get("source");
+      const frame = source ? this.frameStore?.getFrame(source) : this.frameStore?.getPrimaryFrame();
       if (!frame || !frame.buffer) {
         res.writeHead(204);
         res.end();
@@ -264,7 +401,7 @@ export class DashboardServer {
       socket.on("data", (chunk) => {
         pending = Buffer.concat([pending, chunk]);
         const decoded = decodeFrames(pending);
-        pending = Buffer.from(decoded.remaining);
+        pending = decoded.remaining;
         for (const message of decoded.messages) {
           if (message === null) {
             try {
@@ -279,13 +416,16 @@ export class DashboardServer {
 
       socket.on("close", () => {
         this.clients.delete(socket);
+        this.broadcastStatus();
       });
 
       socket.on("error", () => {
         this.clients.delete(socket);
+        this.broadcastStatus();
       });
 
-      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null });
+      this.send(socket, { kind: "hello", traceId: this.trace?.traceId ?? null, context: this.getRuntimeContext?.() ?? null, signalSubscriptions: this.profile?.signalSubscriptions ?? [] });
+      this.broadcastStatus();
     } catch {
       socket.destroy();
     }
@@ -363,9 +503,11 @@ export class DashboardServer {
     });
     res.write(":ok\n\n");
     this.sseClients.add(res);
-    this.sendSse(JSON.stringify({ kind: "hello", traceId: this.trace?.traceId ?? null }));
+    this.sendSse(JSON.stringify({ kind: "hello", traceId: this.trace?.traceId ?? null, signalSubscriptions: this.profile?.signalSubscriptions ?? [] }));
+    this.broadcastStatus();
     res.on("close", () => {
       this.sseClients.delete(res);
+      this.broadcastStatus();
     });
   }
 
@@ -379,9 +521,90 @@ export class DashboardServer {
       seq: frame.seq,
       traceId: frame.traceId,
       receivedAt: frame.receivedAt,
-      data: frame.buffer.toString("base64"),
     };
     this.broadcast(payload);
+    this.broadcastStatus();
+    this.broadcastMjpegFrame(frame);
+  }
+
+  broadcastMjpegFrame(frame, singleClient = null) {
+    // Use the de-facto MJPEG convention: the header boundary includes the
+    // leading "--" and each part starts with that exact delimiter. Many
+    // browsers (and Home Assistant) use this form; the strict RFC form of
+    // "boundary=frame" + body "--frame" is not universally parsed.
+    const boundary = "--frame";
+    const header = `Content-Type: ${frame.contentType}\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`;
+    const targets = singleClient ? [singleClient] : this.mjpegClients;
+    for (const client of targets) {
+      try {
+        if (client.source && frame.source !== client.source) {
+          continue;
+        }
+        const writeFrame = () => {
+          client.res.write(boundary);
+          client.res.write("\r\n");
+          client.res.write(header);
+          client.res.write(frame.buffer);
+          client.res.write("\r\n");
+        };
+        writeFrame();
+        // Chrome sometimes displays the n-1 frame; send the first frame twice
+        // so the stream starts rendering immediately.
+        if (client.firstFrame) {
+          client.firstFrame = false;
+          writeFrame();
+        }
+      } catch (err) {
+        console.error("[mjpeg] write error:", err.message);
+        try {
+          client.res.end();
+        } catch {}
+        this.mjpegClients.delete(client);
+      }
+    }
+  }
+
+  handleMjpeg(_req, res) {
+    const url = new URL(_req.url, `http://${_req.headers.host}`);
+    const clientId = url.searchParams.get("client") || "unknown";
+    const source = url.searchParams.get("source") || null;
+    console.log(`[mjpeg] client connected: ${clientId}${source ? ` source=${source}` : ""}`);
+    res.writeHead(200, {
+      "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    });
+    const client = { res, firstFrame: true, source };
+    this.mjpegClients.add(client);
+    const frame = source ? this.frameStore?.getFrame(source) : this.frameStore?.getPrimaryFrame();
+    if (frame && frame.buffer) {
+      this.broadcastMjpegFrame(frame, client);
+    } else {
+      // Send a tiny placeholder so the browser stops its loading spinner
+      // before the first real frame arrives.
+      this.broadcastMjpegFrame(
+        {
+          buffer: PLACEHOLDER_JPEG,
+          contentType: "image/jpeg",
+          source: "placeholder",
+          width: 1,
+          height: 1,
+          seq: 0,
+          traceId: null,
+          receivedAt: new Date().toISOString(),
+        },
+        client,
+      );
+    }
+    res.on("close", () => {
+      console.log(`[mjpeg] client disconnected: ${clientId}`);
+      this.mjpegClients.delete(client);
+    });
+    res.on("error", (err) => {
+      console.error(`[mjpeg] client error: ${clientId} ${err.message}`);
+      this.mjpegClients.delete(client);
+    });
   }
 
   broadcastEvent(event) {
@@ -433,6 +656,33 @@ export class DashboardServer {
     return { fullPath, rel };
   }
 
+  _listScenes() {
+    const scenes = [];
+    const maxScenes = 500;
+    const walk = (dir) => {
+      if (scenes.length >= maxScenes) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (scenes.length >= maxScenes) break;
+        if (entry.name.startsWith(".")) continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".tscn")) {
+          const rel = path.relative(this.projectRoot, fullPath).replace(/\\/g, "/");
+          scenes.push(rel);
+        }
+      }
+    };
+    walk(this.projectRoot);
+    return scenes.sort();
+  }
+
   async readRequestBody(req) {
     return new Promise((resolve, reject) => {
       let body = "";
@@ -446,6 +696,8 @@ export class DashboardServer {
   }
 
   handleFilesRequest(req, res, pathname, url) {
+    const ignorePatterns = parseIgnorePatterns(url);
+
     if (pathname === "/api/files/tree") {
       const relPath = url.searchParams.get("path") || ".";
       const resolved = this.resolveProjectPath(relPath);
@@ -460,7 +712,7 @@ export class DashboardServer {
       const stat = fs.statSync(resolved.fullPath);
       if (stat.isDirectory()) {
         const entries = fs.readdirSync(resolved.fullPath, { withFileTypes: true })
-          .filter((d) => !d.name.startsWith("."))
+          .filter((d) => !d.name.startsWith(".") && !shouldIgnore(path.posix.join(resolved.rel.replace(/\\/g, "/"), d.name), ignorePatterns))
           .map((d) => ({
             name: d.name,
             type: d.isDirectory() ? "directory" : "file",
@@ -474,6 +726,70 @@ export class DashboardServer {
         return;
       }
       json(res, { ok: false, error: "not a directory" }, 400);
+      return;
+    }
+
+    if (pathname === "/api/files/search") {
+      const q = url.searchParams.get("q") || "";
+      const relPath = url.searchParams.get("path") || ".";
+      const contentMode = url.searchParams.get("content") === "1";
+      const caseSensitive = url.searchParams.get("case") === "1";
+      const wholeWord = url.searchParams.get("word") === "1";
+      const glob = url.searchParams.get("glob") || "";
+      const resolved = this.resolveProjectPath(relPath);
+      if (resolved.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      if (!fs.existsSync(resolved.fullPath)) {
+        json(res, { ok: false, error: "not found" }, 404);
+        return;
+      }
+      if (q.length === 0) {
+        json(res, { ok: true, mode: contentMode ? "content" : "name", query: q, matches: [], files: [], filesScanned: 0, truncated: false });
+        return;
+      }
+      const searchOptions = { caseSensitive, wholeWord, glob, ignorePatterns };
+      if (contentMode) {
+        const result = this._searchFileContents(resolved.fullPath, resolved.rel, q, searchOptions);
+        json(res, { ok: true, mode: "content", query: q, matches: result.matches, filesScanned: result.filesScanned, truncated: result.truncated });
+        return;
+      }
+      const result = this._searchFileNames(resolved.fullPath, resolved.rel, q, searchOptions);
+      json(res, { ok: true, mode: "name", query: q, files: result.files, filesScanned: result.filesScanned, truncated: result.truncated });
+      return;
+    }
+
+    if (pathname === "/api/files/create-dir") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      this.readRequestBody(req).then((body) => {
+        let payload;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          json(res, { ok: false, error: "invalid json" }, 400);
+          return;
+        }
+        const target = this.resolveProjectPath(payload.path || ".");
+        if (target.error) {
+          json(res, { ok: false, error: target.error }, 400);
+          return;
+        }
+        if (isProtectedPath(target.rel)) {
+          json(res, { ok: false, error: "protected path" }, 400);
+          return;
+        }
+        try {
+          fs.mkdirSync(target.fullPath, { recursive: true });
+          this._notifyFsRefresh(target.rel);
+          json(res, { ok: true, path: target.rel });
+        } catch (e) {
+          json(res, { ok: false, error: e.message }, 500);
+        }
+      });
       return;
     }
 
@@ -512,18 +828,149 @@ export class DashboardServer {
             json(res, { ok: false, error: target.error }, 400);
             return;
           }
+          if (isProtectedPath(target.rel)) {
+            json(res, { ok: false, error: "protected path" }, 400);
+            return;
+          }
           const dir = path.dirname(target.fullPath);
           if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
           }
           fs.writeFileSync(target.fullPath, payload.content ?? "", "utf8");
+          this._notifyFsRefresh(target.rel);
           json(res, { ok: true, path: target.rel });
         });
+        return;
+      }
+      if (req.method === "DELETE") {
+        const resolved = this.resolveProjectPath(relPath || ".");
+        if (resolved.error) {
+          json(res, { ok: false, error: resolved.error }, 400);
+          return;
+        }
+        if (!fs.existsSync(resolved.fullPath)) {
+          json(res, { ok: false, error: "not found" }, 404);
+          return;
+        }
+        if (isProtectedPath(resolved.rel)) {
+          json(res, { ok: false, error: "protected path" }, 400);
+          return;
+        }
+        try {
+          fs.rmSync(resolved.fullPath, { recursive: true, force: false });
+          this._notifyFsRefresh(resolved.rel);
+          json(res, { ok: true, path: resolved.rel });
+        } catch (e) {
+          json(res, { ok: false, error: e.message }, 500);
+        }
         return;
       }
     }
 
     notFound(res);
+  }
+
+  _notifyFsRefresh(relPath) {
+    try {
+      this.onControlMessage?.({ action: "fs.refresh", path: relPath.replace(/\\/g, "/") });
+    } catch {}
+  }
+
+  _searchFileNames(rootPath, rootRel, query, options = {}) {
+    const { ignorePatterns = [], glob = "" } = options;
+    const files = [];
+    const MAX_FILES = 200;
+    const q = query.toLowerCase();
+    let filesScanned = 0;
+    const walk = (dir, rel) => {
+      if (files.length >= MAX_FILES) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (files.length >= MAX_FILES) break;
+        if (entry.name.startsWith(".")) continue;
+        const childRel = path.posix.join(rel.replace(/\\/g, "/"), entry.name);
+        if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
+        if (shouldIgnore(childRel, ignorePatterns)) continue;
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), childRel);
+        } else if (entry.isFile()) {
+          if (!matchesGlob(childRel, glob)) continue;
+          filesScanned++;
+          if (childRel.toLowerCase().includes(q)) {
+            files.push({ name: entry.name, type: "file", path: childRel });
+          }
+        }
+      }
+    };
+    walk(rootPath, rootRel);
+    return { files, filesScanned, truncated: files.length >= MAX_FILES };
+  }
+
+  _searchFileContents(rootPath, rootRel, query, options = {}) {
+    const { ignorePatterns = [], caseSensitive = false, wholeWord = false, glob = "" } = options;
+    const matches = [];
+    const MAX_MATCHES = 1000;
+    const MAX_FILES = 1000;
+    const MAX_FILE_SIZE = 1024 * 1024;
+    const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+    let fileCount = 0;
+    let filesScanned = 0;
+    let totalBytes = 0;
+    let truncated = false;
+    const lineMatches = createContentMatcher(query, caseSensitive, wholeWord);
+    const walk = (dir, rel) => {
+      if (matches.length >= MAX_MATCHES || fileCount >= MAX_FILES || truncated) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (matches.length >= MAX_MATCHES || fileCount >= MAX_FILES || truncated) break;
+        if (entry.name.startsWith(".")) continue;
+        const childRel = path.posix.join(rel.replace(/\\/g, "/"), entry.name);
+        if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
+        if (shouldIgnore(childRel, ignorePatterns)) continue;
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), childRel);
+        } else if (entry.isFile()) {
+          if (!matchesGlob(childRel, glob)) continue;
+          const fullPath = path.join(dir, entry.name);
+          const stat = fs.statSync(fullPath);
+          if (!stat.isFile() || stat.size > MAX_FILE_SIZE) continue;
+          let buffer;
+          try {
+            buffer = fs.readFileSync(fullPath);
+          } catch {
+            continue;
+          }
+          if (isBinaryContent(buffer)) continue;
+          totalBytes += buffer.length;
+          if (totalBytes > MAX_TOTAL_BYTES) {
+            truncated = true;
+            break;
+          }
+          fileCount++;
+          filesScanned++;
+          const content = buffer.toString("utf8");
+          const lines = content.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            if (lineMatches(lines[i])) {
+              matches.push({ path: childRel, lineNo: i + 1, line: lines[i].slice(0, 240) });
+              if (matches.length >= MAX_MATCHES) break;
+            }
+          }
+        }
+      }
+    };
+    walk(rootPath, rootRel);
+    return { matches, filesScanned, truncated: truncated || matches.length >= MAX_MATCHES || fileCount >= MAX_FILES };
   }
 
   execGit(args, options = {}) {
