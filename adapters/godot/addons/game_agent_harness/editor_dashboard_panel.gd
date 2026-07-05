@@ -325,14 +325,25 @@ func _build_dashboard_thread(npm_path: String, harness_path: String) -> void:
 	var output: Array = []
 	var node_modules_exists := DirAccess.dir_exists_absolute(harness_path.path_join("node_modules"))
 	if not node_modules_exists:
-		var install_exit := OS.execute(npm_path, ["--prefix", harness_path, "install"], output, true, false)
+		var install_exit := _run_npm(npm_path, harness_path, ["install"], output)
 		if install_exit != 0:
 			call_deferred("_on_build_finished", false, "npm install failed (exit %d):\n%s" % [install_exit, "\n".join(output)])
 			return
 		output.clear()
-	var build_exit := OS.execute(npm_path, ["--prefix", harness_path, "run", "build:dashboard"], output, true, false)
+	var build_exit := _run_npm(npm_path, harness_path, ["run", "build:dashboard"], output)
 	var message := "npm run build:dashboard %s (exit %d):\n%s" % ["succeeded" if build_exit == 0 else "failed", build_exit, "\n".join(output)]
 	call_deferred("_on_build_finished", build_exit == 0, message)
+
+func _run_npm(npm_path: String, harness_path: String, args: Array, output: Array) -> int:
+	if OS.has_feature("windows"):
+		var cmd_args: Array = ["/c", "\"%s\"" % npm_path]
+		cmd_args.append_array(args)
+		cmd_args.append_array(["--prefix", "\"%s\"" % harness_path])
+		return OS.execute("cmd", cmd_args, output, true, false)
+	else:
+		var all_args: Array = args.duplicate()
+		all_args.append_array(["--prefix", harness_path])
+		return OS.execute(npm_path, all_args, output, true, false)
 
 func _on_build_finished(success: bool, output: String) -> void:
 	if _build_thread != null:
@@ -362,8 +373,11 @@ func _which(name: String) -> String:
 	var output: Array = []
 	var cmd := "where" if OS.has_feature("windows") else "which"
 	var exit_code := OS.execute(cmd, [name], output, false, false)
-	if exit_code == 0 and output.size() > 0:
-		return output[0].strip_edges()
+	if exit_code == 0:
+		for line in output:
+			var trimmed := str(line).strip_edges()
+			if not trimmed.is_empty():
+				return trimmed
 	return ""
 
 func _exit_tree() -> void:
