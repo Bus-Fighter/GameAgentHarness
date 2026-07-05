@@ -10,6 +10,7 @@ signal log_level_changed(level: String)
 const _LOG_LEVELS: Array[String] = ["debug", "info", "warning", "error", "off"]
 
 var _process_id: int = -1
+var _build_thread: Thread = null
 var _harness_path: String = ""
 var _dashboard_url: String = ""
 var _status_label: Label
@@ -18,6 +19,7 @@ var _intake_url_label: Label
 var _start_button: Button
 var _stop_button: Button
 var _open_button: Button
+var _build_button: Button
 var _runtime_toggle: CheckButton
 var _lan_toggle: CheckButton
 var _log_level_option: OptionButton
@@ -143,6 +145,12 @@ func _build_ui() -> void:
 	_open_button.disabled = true
 	_open_button.pressed.connect(_on_open_pressed)
 	button_row.add_child(_open_button)
+
+	_build_button = Button.new()
+	_build_button.text = "Build Dashboard"
+	_build_button.tooltip_text = "Run npm install and npm run build:dashboard in the harness directory."
+	_build_button.pressed.connect(_build_dashboard)
+	button_row.add_child(_build_button)
 
 	_poll_timer = Timer.new()
 	_poll_timer.wait_time = 1.0
@@ -289,5 +297,77 @@ func _read_project_setting(key: String, default_value: Variant) -> Variant:
 		return ProjectSettings.get_setting(key)
 	return default_value
 
+func _build_dashboard() -> void:
+	_harness_path = _path_line.text.strip_edges()
+	if _harness_path.is_empty():
+		push_warning("[GameAgentHarness] Harness path is empty")
+		return
+	if not DirAccess.dir_exists_absolute(_harness_path):
+		push_warning("[GameAgentHarness] Harness path does not exist: %s" % _harness_path)
+		return
+
+	var npm_path := _find_npm()
+	if npm_path.is_empty():
+		push_warning("[GameAgentHarness] npm not found. Make sure Node.js is installed and on PATH.")
+		return
+
+	_status_label.text = "Status: building dashboard..."
+	_build_button.disabled = true
+
+	_build_thread = Thread.new()
+	var err := _build_thread.start(_build_dashboard_thread.bind(npm_path, _harness_path))
+	if err != OK:
+		_build_button.disabled = false
+		_status_label.text = "Status: build thread failed"
+		push_warning("[GameAgentHarness] Failed to start build thread")
+
+func _build_dashboard_thread(npm_path: String, harness_path: String) -> void:
+	var output: Array = []
+	var node_modules_exists := DirAccess.dir_exists_absolute(harness_path.path_join("node_modules"))
+	if not node_modules_exists:
+		var install_exit := OS.execute(npm_path, ["--prefix", harness_path, "install"], output, true, false)
+		if install_exit != 0:
+			call_deferred("_on_build_finished", false, "npm install failed (exit %d):\n%s" % [install_exit, "\n".join(output)])
+			return
+		output.clear()
+	var build_exit := OS.execute(npm_path, ["--prefix", harness_path, "run", "build:dashboard"], output, true, false)
+	var message := "npm run build:dashboard %s (exit %d):\n%s" % ["succeeded" if build_exit == 0 else "failed", build_exit, "\n".join(output)]
+	call_deferred("_on_build_finished", build_exit == 0, message)
+
+func _on_build_finished(success: bool, output: String) -> void:
+	if _build_thread != null:
+		_build_thread.wait_to_finish()
+		_build_thread = null
+	_build_button.disabled = false
+	if success:
+		_status_label.text = "Status: dashboard built"
+		print("[GameAgentHarness] %s" % output)
+	else:
+		_status_label.text = "Status: build failed"
+		push_warning("[GameAgentHarness] %s" % output)
+
+func _find_npm() -> String:
+	if OS.has_feature("windows"):
+		for name in ["npm.cmd", "npm"]:
+			var path := _which(name)
+			if not path.is_empty():
+				return path
+	else:
+		var path := _which("npm")
+		if not path.is_empty():
+			return path
+	return ""
+
+func _which(name: String) -> String:
+	var output: Array = []
+	var cmd := "where" if OS.has_feature("windows") else "which"
+	var exit_code := OS.execute(cmd, [name], output, false, false)
+	if exit_code == 0 and output.size() > 0:
+		return output[0].strip_edges()
+	return ""
+
 func _exit_tree() -> void:
 	_on_stop_pressed()
+	if _build_thread != null:
+		_build_thread.wait_to_finish()
+		_build_thread = null

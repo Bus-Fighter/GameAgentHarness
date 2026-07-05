@@ -67,7 +67,7 @@ func _enter_tree() -> void:
 	scene_changed.connect(_on_scene_changed)
 
 	dashboard_panel = DashboardPanelScript.new()
-	dashboard_panel.name = "GameAgentHarnessDashboard"
+	dashboard_panel.name = "Agent"
 	add_control_to_dock(DOCK_SLOT_LEFT_UL, dashboard_panel)
 	dashboard_panel.dashboard_started.connect(_on_dashboard_started)
 	dashboard_panel.dashboard_stopped.connect(_on_dashboard_stopped)
