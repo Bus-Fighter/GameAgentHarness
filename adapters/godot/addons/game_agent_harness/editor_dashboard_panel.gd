@@ -325,7 +325,7 @@ func _build_dashboard_thread(npm_path: String, harness_path: String) -> void:
 	var output: Array = []
 	var node_modules_exists := DirAccess.dir_exists_absolute(harness_path.path_join("node_modules"))
 	if not node_modules_exists:
-		var install_exit := _run_npm(npm_path, harness_path, ["install"], output)
+		var install_exit := _run_npm(npm_path, harness_path, ["install", "--legacy-peer-deps"], output)
 		if install_exit != 0:
 			call_deferred("_on_build_finished", false, "npm install failed (exit %d):\n%s" % [install_exit, "\n".join(output)])
 			return
@@ -336,13 +336,12 @@ func _build_dashboard_thread(npm_path: String, harness_path: String) -> void:
 
 func _run_npm(npm_path: String, harness_path: String, args: Array, output: Array) -> int:
 	if OS.has_feature("windows"):
-		var cmd_args: Array = ["/c", "\"%s\"" % npm_path]
+		var cmd_args: Array = ["/c", npm_path, "--prefix", "\"%s\"" % harness_path]
 		cmd_args.append_array(args)
-		cmd_args.append_array(["--prefix", "\"%s\"" % harness_path])
 		return OS.execute("cmd", cmd_args, output, true, false)
 	else:
-		var all_args: Array = args.duplicate()
-		all_args.append_array(["--prefix", harness_path])
+		var all_args: Array = ["--prefix", harness_path]
+		all_args.append_array(args)
 		return OS.execute(npm_path, all_args, output, true, false)
 
 func _on_build_finished(success: bool, output: String) -> void:
@@ -360,13 +359,11 @@ func _on_build_finished(success: bool, output: String) -> void:
 func _find_npm() -> String:
 	if OS.has_feature("windows"):
 		for name in ["npm.cmd", "npm"]:
-			var path := _which(name)
-			if not path.is_empty():
-				return path
+			if not _which(name).is_empty():
+				return "npm"
 	else:
-		var path := _which("npm")
-		if not path.is_empty():
-			return path
+		if not _which("npm").is_empty():
+			return "npm"
 	return ""
 
 func _which(name: String) -> String:
