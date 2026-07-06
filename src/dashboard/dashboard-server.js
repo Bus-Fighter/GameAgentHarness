@@ -94,6 +94,17 @@ function isProtectedPath(rel) {
   return false;
 }
 
+function parseGitRefs(decorate) {
+  if (!decorate) return [];
+  return decorate.split(", ").map((part) => {
+    const trimmed = part.trim();
+    if (trimmed.startsWith("tag: ")) return { type: "tag", name: trimmed.slice(5) };
+    if (trimmed.includes(" -> ")) return { type: "branch", name: trimmed.split(" -> ")[1] };
+    if (trimmed === "HEAD") return { type: "head", name: "HEAD" };
+    return { type: "ref", name: trimmed };
+  });
+}
+
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -994,6 +1005,108 @@ export class DashboardServer {
   }
 
   async handleGitRequest(req, res, pathname, url) {
+    if (pathname === "/api/git/log") {
+      const branch = url.searchParams.get("branch") || "HEAD";
+      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 200)));
+      const skip = Math.max(0, Number(url.searchParams.get("skip") || 0));
+      const FIELD_SEP = "\x00";
+      const RECORD_SEP = "\x01";
+      const FIELD_FMT = "%x00";
+      const RECORD_FMT = "%x01";
+      const [logResult, countResult] = await Promise.all([
+        this.execGit([
+          "log", branch,
+          "--skip", String(skip),
+          "--max-count", String(limit),
+          `--pretty=format:%H${FIELD_FMT}%P${FIELD_FMT}%an${FIELD_FMT}%ae${FIELD_FMT}%at${FIELD_FMT}%D${FIELD_FMT}%s${RECORD_FMT}`,
+        ]),
+        this.execGit(["rev-list", "--count", branch]),
+      ]);
+      if (logResult.code !== 0) {
+        json(res, { ok: false, error: logResult.stderr || "git log failed" }, 500);
+        return;
+      }
+      const records = logResult.stdout.split(RECORD_SEP).filter((r) => r.includes(FIELD_SEP));
+      const commits = records.map((record) => {
+        const cleanRecord = record.replace(/^\n/, "");
+        const [hash, parents, author, email, date, refs, ...subjectRest] = cleanRecord.split(FIELD_SEP);
+        const timestamp = Number(date);
+        return {
+          hash: (hash || "").trim(),
+          parents: parents ? parents.split(" ").filter(Boolean) : [],
+          author: author || "",
+          email: email || "",
+          date: Number.isFinite(timestamp) ? new Date(timestamp * 1000).toISOString() : null,
+          refs: parseGitRefs(refs),
+          subject: subjectRest.join(FIELD_SEP).replace(/\n$/, "") || "",
+        };
+      });
+      json(res, {
+        ok: true,
+        branch,
+        skip,
+        limit,
+        total: countResult.code === 0 ? Number(countResult.stdout.trim()) || commits.length : commits.length,
+        commits,
+      });
+      return;
+    }
+
+    if (pathname.startsWith("/api/git/commit/")) {
+      const hash = pathname.slice("/api/git/commit/".length).split("/")[0];
+      if (!hash) {
+        json(res, { ok: false, error: "missing commit hash" }, 400);
+        return;
+      }
+      const relPath = url.searchParams.get("path");
+      const resolved = relPath ? this.resolveProjectPath(relPath) : null;
+      if (resolved?.error) {
+        json(res, { ok: false, error: resolved.error }, 400);
+        return;
+      }
+      const FIELD_SEP = "\x00";
+      const FIELD_FMT = "%x00";
+      const [metaResult, filesResult] = await Promise.all([
+        this.execGit(["show", "-s", `--format=%H${FIELD_FMT}%an${FIELD_FMT}%ae${FIELD_FMT}%at${FIELD_FMT}%s`, hash]),
+        this.execGit(["diff-tree", "--no-commit-id", "--name-status", "-r", hash]),
+      ]);
+      if (metaResult.code !== 0) {
+        json(res, { ok: false, error: metaResult.stderr || "git show failed" }, 500);
+        return;
+      }
+      const metaParts = metaResult.stdout.split(FIELD_SEP);
+      const timestamp = Number(metaParts[3]);
+      const meta = {
+        hash: (metaParts[0] || hash).trim(),
+        author: metaParts[1] || "",
+        email: metaParts[2] || "",
+        date: Number.isFinite(timestamp) ? new Date(timestamp * 1000).toISOString() : null,
+        subject: metaParts.slice(4).join(FIELD_SEP).replace(/\n$/, "") || "",
+      };
+      const files = filesResult.stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [status, ...rest] = line.split("\t");
+          const filePath = rest.join("\t");
+          return { path: filePath, status };
+        });
+      let diff = "";
+      if (resolved) {
+        const hasParent = await this.execGit(["rev-parse", `${hash}^`]);
+        const diffResult = hasParent.code === 0 && hasParent.stdout.trim()
+          ? await this.execGit(["diff", `${hash}^`, hash, "--", resolved.fullPath])
+          : await this.execGit(["show", "--format=", hash, "--", resolved.fullPath]);
+        if (diffResult.code !== 0) {
+          json(res, { ok: false, error: diffResult.stderr || "git diff failed" }, 500);
+          return;
+        }
+        diff = diffResult.stdout;
+      }
+      json(res, { ok: true, meta, files, diff });
+      return;
+    }
+
     if (pathname === "/api/git/status") {
       const result = await this.execGit(["status", "--porcelain=v1", "-b"]);
       if (result.code !== 0) {

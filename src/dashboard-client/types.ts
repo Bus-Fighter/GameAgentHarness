@@ -152,6 +152,48 @@ export interface GitStatus {
   files: GitFile[];
 }
 
+export interface GitRef {
+  type: "tag" | "branch" | "head" | "ref";
+  name: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  parents: string[];
+  author: string;
+  email: string;
+  date: string | null;
+  refs: GitRef[];
+  subject: string;
+}
+
+export interface GitLogResponse {
+  ok: boolean;
+  branch: string;
+  skip: number;
+  limit: number;
+  total: number;
+  commits: GitCommit[];
+}
+
+export interface CommitFile {
+  path: string;
+  status: string;
+}
+
+export interface GitCommitResponse {
+  ok: boolean;
+  meta: {
+    hash: string;
+    author: string;
+    email: string;
+    date: string | null;
+    subject: string;
+  };
+  files: CommitFile[];
+  diff: string;
+}
+
 export interface GitFile {
   path: string;
   indexStatus: string;

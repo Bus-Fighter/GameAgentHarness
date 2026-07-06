@@ -1,6 +1,8 @@
 import type {
   StatusResponse,
   GitStatus,
+  GitLogResponse,
+  GitCommitResponse,
   FileTreeResponse,
   FileContentResponse,
   SearchResponse,
@@ -24,6 +26,20 @@ export async function fetchScenes(): Promise<{ ok: boolean; scenes: string[] }> 
 
 export async function fetchGitStatus(): Promise<GitStatus> {
   return apiGet<GitStatus>("/git/status");
+}
+
+export async function fetchGitLog(options: { branch?: string; limit?: number; skip?: number } = {}): Promise<GitLogResponse> {
+  const params = new URLSearchParams();
+  if (options.branch) params.set("branch", options.branch);
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.skip != null) params.set("skip", String(options.skip));
+  return apiGet<GitLogResponse>("/git/log?" + params.toString());
+}
+
+export async function fetchGitCommit(hash: string, path?: string): Promise<GitCommitResponse> {
+  const params = new URLSearchParams();
+  if (path) params.set("path", path);
+  return apiGet<GitCommitResponse>("/git/commit/" + encodeURIComponent(hash) + "?" + params.toString());
 }
 
 export async function fetchGitDiff(path: string): Promise<{ ok: boolean; diff: string }> {

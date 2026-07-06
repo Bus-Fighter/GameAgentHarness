@@ -7,8 +7,11 @@ import {
   Folder,
   ChevronLeft,
   Home,
+  History,
 } from "lucide-react";
 import { CodeEditor } from "./CodeEditor";
+import { DiffView } from "./DiffView";
+import { GitHistoryPanel } from "./GitHistoryPanel";
 import { PanelHeaderActions } from "./PanelHeaderActions";
 import { FullscreenOverlay } from "./FullscreenOverlay";
 import {
@@ -52,7 +55,7 @@ export function FileReviewPanel({
   onRequestPreview,
   onRequestImportSettings,
 }: FileReviewPanelProps) {
-  const [tab, setTab] = useState<"git" | "project">("git");
+  const [tab, setTab] = useState<"git" | "project" | "history">("git");
   const [gitFiles, setGitFiles] = useState<GitFile[]>([]);
   const [tree, setTree] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState<string>(".");
@@ -212,8 +215,29 @@ export function FileReviewPanel({
           <FolderTree className="h-4 w-4" />
           Project Files
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("history")}
+          className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            tab === "history"
+              ? "border-[rgba(34,197,94,0.4)] bg-[var(--accent-dim)] text-[var(--accent)]"
+              : "border-[var(--border)] bg-[var(--bg)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          Git History
+        </button>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-[var(--border)] lg:grid-cols-[280px_1fr] lg:divide-x lg:divide-y-0">
+      {tab === "history" ? (
+        <GitHistoryPanel
+          fontSize={fontSize}
+          onOpenFileAtHead={(path) => {
+            setTab("project");
+            openFile(path, false);
+          }}
+        />
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-[var(--border)] lg:grid-cols-[280px_1fr] lg:divide-x lg:divide-y-0">
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] p-2">
             {tab === "project" ? (
@@ -390,22 +414,7 @@ export function FileReviewPanel({
               </div>
             )}
             {selectedPath && diff && !editable ? (
-              <pre
-                className="p-3 font-mono text-xs leading-relaxed"
-                style={{ fontSize: `${fontSize}px` }}
-              >
-                {diff.split("\n").map((line, i) => {
-                  let color = "";
-                  if (line.startsWith("+")) color = "text-green-400";
-                  else if (line.startsWith("-")) color = "text-red-400";
-                  else if (line.startsWith("@")) color = "text-[var(--muted)]";
-                  return (
-                    <div key={i} className={color}>
-                      {line || " "}
-                    </div>
-                  );
-                })}
-              </pre>
+              <DiffView diff={diff} fontSize={fontSize} />
             ) : null}
             {selectedPath && (editable || !diff) ? (
               <CodeEditor
@@ -444,6 +453,7 @@ export function FileReviewPanel({
           )}
         </div>
       </div>
+    )}
     </>
   );
 
