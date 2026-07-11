@@ -3,6 +3,8 @@ import { Monitor, Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameMjpegUrl, getLiveFrameUrl } from "../api";
 import { useMjpegStream } from "../hooks/useMjpegStream";
 import { FullscreenOverlay } from "./FullscreenOverlay";
+import { useVirtualCursor } from "../hooks/useVirtualCursor";
+import { VirtualCursorOverlay } from "./VirtualCursorOverlay";
 import type { FrameMessage } from "../types";
 
 interface ViewportPanelProps {
@@ -11,8 +13,10 @@ interface ViewportPanelProps {
   source: "runtime" | "editor";
   useMjpeg: boolean;
   compact?: boolean;
+  controlMode: "direct" | "cursor";
   onSourceChange: (source: "runtime" | "editor") => void;
   onPointer: (phase: string, event: MouseEvent | TouchEvent) => void;
+  onPointerAt: (phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => void;
   onCompactChange?: (compact: boolean) => void;
 }
 
@@ -27,7 +31,7 @@ function logViewport(message: string, data?: Record<string, unknown>) {
   console.log(`[harness:viewport] ${message}`, data ?? "");
 }
 
-export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, useMjpeg: useMjpegSetting, compact = false, onSourceChange, onPointer, onCompactChange }: ViewportPanelProps) {
+export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame, source, useMjpeg: useMjpegSetting, compact = false, controlMode, onSourceChange, onPointer, onPointerAt, onCompactChange }: ViewportPanelProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mjpegFailed, setMjpegFailed] = useState(false);
   const [ripples, setRipples] = useState<Array<{ id: string; x: number; y: number }>>([]);
@@ -107,6 +111,8 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       }, 2500);
     }
 
+    if (controlMode === "cursor") return;
+
     const handleMouseDown = (e: Event) => {
       const me = e as MouseEvent;
       e.preventDefault();
@@ -158,10 +164,17 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
       node.removeEventListener("touchend", handleTouchEnd);
       node.removeEventListener("touchmove", handleTouchMove);
     };
-  }, [effectiveUseMjpeg, markMjpegFailed]);
+  }, [effectiveUseMjpeg, markMjpegFailed, controlMode]);
+
+  const virtualCursor = useVirtualCursor(controlMode, imgNodeRef, onPointerAt);
 
   const renderViewportContent = (imgUrl: string | null) => (
-    <div className="relative h-full w-full bg-black">
+    <div
+      ref={controlMode === "cursor" ? virtualCursor.surfaceRef : undefined}
+      className={`relative h-full w-full bg-black ${controlMode === "cursor" ? "cursor-none touch-none select-none" : ""}`}
+      style={controlMode === "cursor" ? { WebkitTouchCallout: "none" } : undefined}
+      onContextMenu={controlMode === "cursor" ? (e) => e.preventDefault() : undefined}
+    >
       {!imgUrl ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-4 text-center text-[var(--muted)]">
           <Monitor className="mb-1 h-9 w-9 text-[var(--surface-2)]" />
@@ -184,8 +197,26 @@ export const ViewportPanel = memo(function ViewportPanel({ captureEnabled, frame
           ref={imgRef}
           src={imgUrl}
           alt={`${source} viewport`}
+          draggable={false}
           onError={handleImgError}
-          className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-none"
+          className={`h-full w-full object-contain select-none ${
+            controlMode === "cursor"
+              ? "pointer-events-none touch-none"
+              : "cursor-crosshair pointer-events-auto touch-none"
+          }`}
+        />
+      )}
+      {controlMode === "cursor" && (
+        <VirtualCursorOverlay
+          cursorStyle={virtualCursor.cursorStyle}
+          dragLock={virtualCursor.dragLock}
+          onToggleDragLock={() => virtualCursor.setDragLock((v) => !v)}
+          actions={{
+            click: virtualCursor.click,
+            rightClick: virtualCursor.rightClick,
+            doubleClick: virtualCursor.doubleClick,
+            scroll: virtualCursor.scroll,
+          }}
         />
       )}
       {ripples.map((ripple) => (

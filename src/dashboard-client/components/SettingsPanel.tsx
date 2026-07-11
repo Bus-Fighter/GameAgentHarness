@@ -21,6 +21,7 @@ interface SettingsPanelProps {
   onHistoryEnabledChange: (value: boolean) => void;
   onMaxHistoryEntriesChange: (value: number) => void;
   onPointerInjectModeChange: (value: DashboardSettings["pointerInjectMode"]) => void;
+  onPointerControlModeChange: (value: DashboardSettings["pointerControlMode"]) => void;
   onDockIntervalChange: (value: number) => void;
 }
 
@@ -43,6 +44,7 @@ export function SettingsPanel({
   onHistoryEnabledChange,
   onMaxHistoryEntriesChange,
   onPointerInjectModeChange,
+  onPointerControlModeChange,
   onDockIntervalChange,
 }: SettingsPanelProps) {
   if (!open) return null;
@@ -243,6 +245,21 @@ export function SettingsPanel({
                 />
                 Deduplicate identical frames (disable for smoother static scenes)
               </label>
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  Pointer control mode
+                </div>
+                <select
+                  value={settings.pointerControlMode}
+                  onChange={(e) => onPointerControlModeChange(e.target.value as DashboardSettings["pointerControlMode"])}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                >
+                  <option value="auto">Auto (desktop = direct, mobile = cursor)</option>
+                  <option value="direct">Direct (point and click)</option>
+                  <option value="cursor">Virtual cursor</option>
+                </select>
+              </div>
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[var(--muted)]">
                   <MousePointerClick className="h-3.5 w-3.5" />

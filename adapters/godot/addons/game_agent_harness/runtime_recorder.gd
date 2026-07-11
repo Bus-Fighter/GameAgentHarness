@@ -171,7 +171,9 @@ func _on_harness_control(message: Dictionary) -> void:
 			str(message.get("phase", "pressed")),
 			float(message.get("x", 0.0)),
 			float(message.get("y", 0.0)),
-			int(message.get("button", 0))
+			int(message.get("button", 0)),
+			bool(message.get("double_click", false)),
+			float(message.get("delta", 1.0))
 		)
 	elif action == "pointer_inject_mode":
 		_set_pointer_inject_mode(str(message.get("mode", DEFAULT_POINTER_INJECT_MODE)))
@@ -250,7 +252,7 @@ func _set_paused(enabled: bool) -> void:
 		client.send_event("pause.changed", { "enabled": enabled }, _current_scene_entity())
 	_log_warning("runtime %s from dashboard" % ("paused" if enabled else "resumed"))
 
-func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: int) -> void:
+func _inject_pointer_input(phase: String, nx: float, ny: float, button: int, double_click: bool = false, wheel_delta: float = 1.0) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
 		return
@@ -258,18 +260,47 @@ func _inject_pointer_input(phase: String, nx: float, ny: float, button_index: in
 	var pos := Vector2(nx * size.x, ny * size.y)
 
 	var event: InputEvent
-	if _pointer_inject_mode == "touch":
+	if phase == "moved":
+		var motion := InputEventMouseMotion.new()
+		motion.position = pos
+		motion.global_position = pos
+		motion.button_mask = button
+		event = motion
+	elif phase == "wheel":
+		if _pointer_inject_mode == "touch":
+			return
+		var up := wheel_delta > 0
+		var idx := MOUSE_BUTTON_WHEEL_UP if up else MOUSE_BUTTON_WHEEL_DOWN
+		var f := clampf(abs(wheel_delta), 0.1, 8.0)
+		var press := InputEventMouseButton.new()
+		press.position = pos
+		press.global_position = pos
+		press.button_index = idx
+		press.pressed = true
+		press.factor = f
+		var release := InputEventMouseButton.new()
+		release.position = pos
+		release.global_position = pos
+		release.button_index = idx
+		release.pressed = false
+		release.factor = f
+		Input.parse_input_event(press)
+		Input.parse_input_event(release)
+		return
+	elif _pointer_inject_mode == "touch":
 		var touch := InputEventScreenTouch.new()
 		touch.position = pos
 		touch.pressed = phase != "released"
-		touch.index = button_index
+		touch.index = button
 		event = touch
 	else:
 		var mouse := InputEventMouseButton.new()
 		mouse.position = pos
-		mouse.button_index = clampi(button_index, 1, 9)
+		mouse.button_index = clampi(button, 1, 9)
 		mouse.pressed = phase != "released"
+		mouse.double_click = double_click
 		event = mouse
+		Input.warp_mouse(pos)
 
 	Input.parse_input_event(event)
 

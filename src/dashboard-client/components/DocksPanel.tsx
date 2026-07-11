@@ -9,8 +9,10 @@ interface DocksPanelProps {
   dockInterval: number;
   useMjpeg: boolean;
   dockFrames: Record<string, { seq: number; source: string; receivedAt: string; width?: number; height?: number } | null>;
+  controlMode: "direct" | "cursor";
   onToggleDock: (id: string) => void;
   onPointer: (dock: string, phase: string, event: MouseEvent | TouchEvent) => void;
+  onPointerAt: (dock: string, phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => void;
 }
 
 export const DocksPanel = memo(function DocksPanel({
@@ -19,8 +21,10 @@ export const DocksPanel = memo(function DocksPanel({
   dockInterval,
   useMjpeg,
   dockFrames,
+  controlMode,
   onToggleDock,
   onPointer,
+  onPointerAt,
 }: DocksPanelProps) {
   return (
     <section className="card flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -74,7 +78,9 @@ export const DocksPanel = memo(function DocksPanel({
                       interval={dockInterval}
                       useMjpeg={useMjpeg}
                       frame={frame}
+                      controlMode={controlMode}
                       onPointer={onPointer}
+                      onPointerAt={onPointerAt}
                     />
                   </div>
                 </div>

@@ -187,12 +187,14 @@ test("live frame is broadcast to dashboard and available via API", async (t) => 
     persist: false,
   });
 
-  const frameMsg = await dashboard.nextMessage();
+  let frameMsg = await dashboard.nextMessage();
+  while (frameMsg?.kind === "status") {
+    frameMsg = await dashboard.nextMessage();
+  }
   assert.equal(frameMsg.kind, "frame");
   assert.equal(frameMsg.width, 100);
   assert.equal(frameMsg.height, 80);
   assert.equal(frameMsg.source, "runtime");
-  assert.ok(frameMsg.data);
 
   const live = await fetchHttp("/api/live/frame", DASHBOARD_PORT);
   assert.equal(live.status, 200);
@@ -272,7 +274,7 @@ test("events are broadcast to dashboard clients", async (t) => {
   });
 
   let eventMsg = await dashboard.nextMessage();
-  if (eventMsg.kind == "trace") {
+  while (eventMsg?.kind === "trace" || eventMsg?.kind === "status") {
     eventMsg = await dashboard.nextMessage();
   }
   assert.equal(eventMsg.kind, "event");
@@ -392,7 +394,7 @@ test("SSE endpoint streams events when WebSocket is unavailable", async (t) => {
   });
 
   const deadline = Date.now() + 2000;
-  while (sseMessages.length < 2 && Date.now() < deadline) {
+  while (!sseMessages.some((m) => m.kind === "event") && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 

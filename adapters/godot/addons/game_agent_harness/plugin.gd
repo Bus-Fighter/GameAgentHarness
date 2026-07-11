@@ -654,6 +654,7 @@ func _forward_editor_pointer(message: Dictionary) -> void:
 	var y := clampf(float(message.get("y", 0.0)), 0.0, 1.0)
 	var button := int(message.get("button", 0))
 	var modifiers := message.get("modifiers", {}) as Dictionary
+	var double_click := bool(message.get("double_click", false))
 	var rect := dock.get_global_rect()
 	var point := rect.position + Vector2(x * rect.size.x, y * rect.size.y)
 	var base := get_editor_interface().get_base_control()
@@ -676,10 +677,12 @@ func _forward_editor_pointer(message: Dictionary) -> void:
 		ev.global_position = point
 		ev.button_index = MOUSE_BUTTON_LEFT if button == 0 else button
 		ev.pressed = true
+		ev.double_click = double_click
 		ev.ctrl_pressed = bool(modifiers.get("ctrl", false))
 		ev.shift_pressed = bool(modifiers.get("shift", false))
 		ev.alt_pressed = bool(modifiers.get("alt", false))
 		ev.meta_pressed = bool(modifiers.get("meta", false))
+		Input.warp_mouse(point)
 		vp.push_input(ev)
 	elif phase == "released":
 		var ev := InputEventMouseButton.new()
@@ -691,7 +694,35 @@ func _forward_editor_pointer(message: Dictionary) -> void:
 		ev.shift_pressed = bool(modifiers.get("shift", false))
 		ev.alt_pressed = bool(modifiers.get("alt", false))
 		ev.meta_pressed = bool(modifiers.get("meta", false))
+		Input.warp_mouse(point)
 		vp.push_input(ev)
+	elif phase == "wheel":
+		var delta := float(message.get("delta", 1.0))
+		var up := delta > 0
+		var idx := MOUSE_BUTTON_WHEEL_UP if up else MOUSE_BUTTON_WHEEL_DOWN
+		var f := clampf(abs(delta), 0.1, 8.0)
+		var ev_press := InputEventMouseButton.new()
+		ev_press.position = point
+		ev_press.global_position = point
+		ev_press.button_index = idx
+		ev_press.pressed = true
+		ev_press.factor = f
+		ev_press.ctrl_pressed = bool(modifiers.get("ctrl", false))
+		ev_press.shift_pressed = bool(modifiers.get("shift", false))
+		ev_press.alt_pressed = bool(modifiers.get("alt", false))
+		ev_press.meta_pressed = bool(modifiers.get("meta", false))
+		vp.push_input(ev_press)
+		var ev_release := InputEventMouseButton.new()
+		ev_release.position = point
+		ev_release.global_position = point
+		ev_release.button_index = idx
+		ev_release.pressed = false
+		ev_release.factor = f
+		ev_release.ctrl_pressed = bool(modifiers.get("ctrl", false))
+		ev_release.shift_pressed = bool(modifiers.get("shift", false))
+		ev_release.alt_pressed = bool(modifiers.get("alt", false))
+		ev_release.meta_pressed = bool(modifiers.get("meta", false))
+		vp.push_input(ev_release)
 
 func _build_inspector_data(node: Node) -> Dictionary:
 	var properties: Array[Dictionary] = []

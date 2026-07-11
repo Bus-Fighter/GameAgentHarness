@@ -3,6 +3,8 @@ import { Maximize2, Minimize2 } from "lucide-react";
 import { getLiveFrameMjpegUrl, getLiveFrameUrl } from "../api";
 import { useMjpegStream } from "../hooks/useMjpegStream";
 import { FullscreenOverlay } from "./FullscreenOverlay";
+import { useVirtualCursor } from "../hooks/useVirtualCursor";
+import { VirtualCursorOverlay } from "./VirtualCursorOverlay";
 import type { FrameMessage } from "../types";
 
 interface DockViewportProps {
@@ -12,7 +14,9 @@ interface DockViewportProps {
   interval: number;
   useMjpeg: boolean;
   frame: FrameMessage | null;
+  controlMode: "direct" | "cursor";
   onPointer: (dock: string, phase: string, event: MouseEvent | TouchEvent) => void;
+  onPointerAt: (dock: string, phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => void;
 }
 
 function generateClientId(): string {
@@ -29,7 +33,9 @@ export const DockViewport = memo(function DockViewport({
   interval,
   useMjpeg,
   frame,
+  controlMode,
   onPointer,
+  onPointerAt,
 }: DockViewportProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mjpegFailed, setMjpegFailed] = useState(false);
@@ -86,6 +92,8 @@ export const DockViewport = memo(function DockViewport({
         }, 2500);
       }
 
+      if (controlMode === "cursor") return;
+
       const handleMouseDown = (e: Event) => {
         const me = e as MouseEvent;
         e.preventDefault();
@@ -135,11 +143,27 @@ export const DockViewport = memo(function DockViewport({
         node.removeEventListener("touchmove", handleTouchMove);
       };
     },
-    [effectiveUseMjpeg, markMjpegFailed, dockId],
+    [effectiveUseMjpeg, markMjpegFailed, dockId, controlMode],
+  );
+
+  const virtualCursor = useVirtualCursor(
+    controlMode,
+    imgNodeRef,
+    useCallback(
+      (phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => {
+        onPointerAt(dockId, phase, x, y, button, doubleClick, wheelDelta);
+      },
+      [onPointerAt, dockId],
+    ),
   );
 
   const renderContent = (imgUrl: string | null) => (
-    <div className="relative h-full w-full bg-black">
+    <div
+      ref={controlMode === "cursor" ? virtualCursor.surfaceRef : undefined}
+      className={`relative h-full w-full bg-black ${controlMode === "cursor" ? "cursor-none touch-none select-none" : ""}`}
+      style={controlMode === "cursor" ? { WebkitTouchCallout: "none" } : undefined}
+      onContextMenu={controlMode === "cursor" ? (e) => e.preventDefault() : undefined}
+    >
       {!imgUrl ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-4 text-center text-[var(--muted)]">
           <h3 className="text-sm font-semibold text-[var(--text)]">{enabled ? "No dock frame yet" : "Dock stream disabled"}</h3>
@@ -155,8 +179,26 @@ export const DockViewport = memo(function DockViewport({
           ref={imgRef}
           src={imgUrl}
           alt={title}
+          draggable={false}
           onError={handleImgError}
-          className="h-full w-full cursor-crosshair object-contain select-none pointer-events-auto touch-none"
+          className={`h-full w-full object-contain select-none ${
+            controlMode === "cursor"
+              ? "pointer-events-none touch-none"
+              : "cursor-crosshair pointer-events-auto touch-none"
+          }`}
+        />
+      )}
+      {controlMode === "cursor" && (
+        <VirtualCursorOverlay
+          cursorStyle={virtualCursor.cursorStyle}
+          dragLock={virtualCursor.dragLock}
+          onToggleDragLock={() => virtualCursor.setDragLock((v) => !v)}
+          actions={{
+            click: virtualCursor.click,
+            rightClick: virtualCursor.rightClick,
+            doubleClick: virtualCursor.doubleClick,
+            scroll: virtualCursor.scroll,
+          }}
         />
       )}
     </div>
@@ -195,7 +237,7 @@ export const DockViewport = memo(function DockViewport({
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="relative min-h-0 flex-1 overflow-hidden bg-black">{renderContent(imgUrl)}</div>
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-black">{!fullscreen && renderContent(imgUrl)}</div>
       </section>
       {fullscreen && (
         <FullscreenOverlay title={title} onClose={() => setFullscreen(false)}>

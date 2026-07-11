@@ -18,6 +18,7 @@ export interface DashboardSettings {
   historyEnabled: boolean;
   maxHistoryEntries: number;
   pointerInjectMode: "touch" | "mouse";
+  pointerControlMode: "auto" | "direct" | "cursor";
   ignorePatterns: string[];
   viewportCompact: boolean;
   dockInterval: number;
@@ -40,6 +41,7 @@ const DEFAULTS: DashboardSettings = {
   historyEnabled: true,
   maxHistoryEntries: 200,
   pointerInjectMode: "touch",
+  pointerControlMode: "auto",
   ignorePatterns: ["*.uid"],
   viewportCompact: false,
   dockInterval: 0.5,
@@ -71,6 +73,9 @@ function loadSettings(): DashboardSettings {
       pointerInjectMode: ["touch", "mouse"].includes(parsed.pointerInjectMode || "")
         ? (parsed.pointerInjectMode as DashboardSettings["pointerInjectMode"])
         : DEFAULTS.pointerInjectMode,
+      pointerControlMode: ["auto", "direct", "cursor"].includes(parsed.pointerControlMode || "")
+        ? (parsed.pointerControlMode as DashboardSettings["pointerControlMode"])
+        : DEFAULTS.pointerControlMode,
       ignorePatterns: Array.isArray(parsed.ignorePatterns)
         ? parsed.ignorePatterns.filter((p) => typeof p === "string" && p.trim() !== "")
         : DEFAULTS.ignorePatterns,
@@ -108,6 +113,7 @@ export function useSettings(): {
   setHistoryEnabled: (value: boolean) => void;
   setMaxHistoryEntries: (value: number) => void;
   setPointerInjectMode: (value: DashboardSettings["pointerInjectMode"]) => void;
+  setPointerControlMode: (value: DashboardSettings["pointerControlMode"]) => void;
   setIgnorePatterns: (value: string[]) => void;
   setViewportCompact: (value: boolean) => void;
   setDockInterval: (value: number) => void;
@@ -185,6 +191,10 @@ export function useSettings(): {
     setSettings((prev) => ({ ...prev, pointerInjectMode: value }));
   }, []);
 
+  const setPointerControlMode = useCallback((value: DashboardSettings["pointerControlMode"]) => {
+    setSettings((prev) => ({ ...prev, pointerControlMode: value }));
+  }, []);
+
   const setIgnorePatterns = useCallback((value: string[]) => {
     const cleaned = value.map((p) => p.trim()).filter(Boolean);
     setSettings((prev) => ({ ...prev, ignorePatterns: cleaned }));
@@ -207,5 +217,5 @@ export function useSettings(): {
     });
   }, []);
 
-  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setUseMjpeg, setDeduplicateFrames, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode, setIgnorePatterns, setViewportCompact, setDockInterval, setEnabledDocks };
+  return { settings, setFontSize, setLogsEnabled, setLogLevel, setMaxLogLines, setEditorViewportEnabled, setEditorViewportInterval, setRuntimeViewportInterval, setEvidenceFrameInterval, setUseMjpeg, setDeduplicateFrames, setInspectorEnabled, setSignalsEnabled, setHistoryEnabled, setMaxHistoryEntries, setPointerInjectMode, setPointerControlMode, setIgnorePatterns, setViewportCompact, setDockInterval, setEnabledDocks };
 }

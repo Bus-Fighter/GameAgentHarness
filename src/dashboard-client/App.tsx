@@ -16,6 +16,7 @@ import { LiveActivityStrip } from "./components/LiveActivityStrip";
 import { DocksPanel } from "./components/DocksPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSettings } from "./hooks/useSettings";
+import { isMobilePointer } from "./utils/detectMobile";
 import { fetchStatus, fetchScenes } from "./api";
 import type {
   WebSocketMessage,
@@ -103,6 +104,7 @@ export default function App() {
     setHistoryEnabled,
     setMaxHistoryEntries,
     setPointerInjectMode,
+    setPointerControlMode,
     setIgnorePatterns,
     setViewportCompact,
     setDockInterval,
@@ -555,6 +557,31 @@ export default function App() {
 
   const engineConnected = (status?.engineClients ?? 0) > 0;
 
+  const sendPointer = useCallback(
+    (action: "input.pointer" | "input.editor_pointer", phase: string, x: number, y: number, button: number, doubleClick: boolean, modifiers: { ctrl: boolean; shift: boolean; alt: boolean; meta: boolean }, extra: Record<string, unknown> = {}) => {
+      sendControl(action, {
+        phase,
+        x,
+        y,
+        button,
+        double_click: doubleClick,
+        modifiers,
+        ...extra,
+      });
+    },
+    [sendControl],
+  );
+
+  const resolveControlMode = useCallback((): "direct" | "cursor" => {
+    const mode = settings.pointerControlMode;
+    if (mode === "auto") {
+      return isMobilePointer() ? "cursor" : "direct";
+    }
+    return mode;
+  }, [settings.pointerControlMode]);
+
+  const controlMode = resolveControlMode();
+
   const handlePointer = useCallback(
     (phase: string, e: MouseEvent | TouchEvent) => {
       const img = e.currentTarget as HTMLImageElement;
@@ -585,21 +612,24 @@ export default function App() {
       const y = Math.max(0, Math.min(1, (clientY - rect.top - offsetY) / safeHeight));
 
       const mouse = e as MouseEvent;
-      sendControl("input.pointer", {
+      const isMoved = phase === "moved";
+      sendPointer(
+        "input.pointer",
         phase,
         x,
         y,
-        button: mouse.button ?? 0,
-        modifiers: {
+        isMoved ? (mouse.buttons ?? 0) : (mouse.button ?? 0),
+        phase === "pressed" && mouse.detail === 2,
+        {
           ctrl: mouse.ctrlKey || false,
           shift: mouse.shiftKey || false,
           alt: mouse.altKey || false,
           meta: mouse.metaKey || false,
         },
-      });
+      );
       e.preventDefault();
     },
-    [sendControl],
+    [sendPointer],
   );
 
   const handleDockPointer = useCallback(
@@ -632,22 +662,57 @@ export default function App() {
       const y = Math.max(0, Math.min(1, (clientY - rect.top - offsetY) / safeHeight));
 
       const mouse = e as MouseEvent;
-      sendControl("input.editor_pointer", {
-        dock,
+      const isMoved = phase === "moved";
+      sendPointer(
+        "input.editor_pointer",
         phase,
         x,
         y,
-        button: mouse.button ?? 0,
-        modifiers: {
+        isMoved ? (mouse.buttons ?? 0) : (mouse.button ?? 0),
+        phase === "pressed" && mouse.detail === 2,
+        {
           ctrl: mouse.ctrlKey || false,
           shift: mouse.shiftKey || false,
           alt: mouse.altKey || false,
           meta: mouse.metaKey || false,
         },
-      });
+        { dock },
+      );
       e.preventDefault();
     },
-    [sendControl],
+    [sendPointer],
+  );
+
+  const handlePointerAt = useCallback(
+    (phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => {
+      sendPointer(
+        "input.pointer",
+        phase,
+        x,
+        y,
+        button,
+        doubleClick,
+        { ctrl: false, shift: false, alt: false, meta: false },
+        wheelDelta !== undefined ? { delta: wheelDelta } : {},
+      );
+    },
+    [sendPointer],
+  );
+
+  const handleDockPointerAt = useCallback(
+    (dock: string, phase: string, x: number, y: number, button: number, doubleClick: boolean, wheelDelta?: number) => {
+      sendPointer(
+        "input.editor_pointer",
+        phase,
+        x,
+        y,
+        button,
+        doubleClick,
+        { ctrl: false, shift: false, alt: false, meta: false },
+        { dock, ...(wheelDelta !== undefined ? { delta: wheelDelta } : {}) },
+      );
+    },
+    [sendPointer],
   );
 
   const handleDockToggle = useCallback(
@@ -842,8 +907,10 @@ export default function App() {
               source={viewportSource}
               useMjpeg={settings.useMjpeg}
               compact={settings.viewportCompact}
+              controlMode={controlMode}
               onSourceChange={setViewportSource}
               onPointer={handlePointer}
+              onPointerAt={handlePointerAt}
               onCompactChange={setViewportCompact}
             />
             <SceneCard
@@ -893,8 +960,10 @@ export default function App() {
               dockInterval={settings.dockInterval}
               useMjpeg={settings.useMjpeg}
               dockFrames={dockFrames}
+              controlMode={controlMode}
               onToggleDock={handleDockToggle}
               onPointer={handleDockPointer}
+              onPointerAt={handleDockPointerAt}
             />
           </TabPanel>
         )}
@@ -1010,6 +1079,7 @@ export default function App() {
         onHistoryEnabledChange={setHistoryEnabled}
         onMaxHistoryEntriesChange={setMaxHistoryEntries}
         onPointerInjectModeChange={setPointerInjectMode}
+        onPointerControlModeChange={setPointerControlMode}
         onDockIntervalChange={setDockInterval}
       />
     </div>
