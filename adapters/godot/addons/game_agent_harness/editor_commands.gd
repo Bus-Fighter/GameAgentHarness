@@ -144,7 +144,7 @@ func _cmd_add_node(params: Dictionary) -> Dictionary:
 		return _err("could not instantiate type: %s" % node_type)
 	node.name = node_name
 	var root := _edited_root()
-	var ur := EditorInterface.get_undo_redo()
+	var ur := EditorInterface.get_editor_undo_redo()
 	ur.create_action("Harness Add Node")
 	ur.add_do_method(parent, "add_child", node)
 	ur.add_do_method(node, "set_owner", root)
@@ -170,7 +170,7 @@ func _cmd_remove_node(params: Dictionary) -> Dictionary:
 	if parent == null:
 		return _err("node has no parent: %s" % path)
 	var index := node.get_index()
-	var ur := EditorInterface.get_undo_redo()
+	var ur := EditorInterface.get_editor_undo_redo()
 	ur.create_action("Harness Remove Node")
 	ur.add_do_method(parent, "remove_child", node)
 	ur.add_undo_method(parent, "add_child", node)
@@ -190,7 +190,7 @@ func _cmd_set_property(params: Dictionary) -> Dictionary:
 		return _err("node not found: %s" % path)
 	var old_value = node.get(property)
 	var new_value = Util.decode_value(params.get("value"))
-	var ur := EditorInterface.get_undo_redo()
+	var ur := EditorInterface.get_editor_undo_redo()
 	ur.create_action("Harness Set Property")
 	ur.add_do_property(node, property, new_value)
 	ur.add_undo_property(node, property, old_value)
@@ -198,14 +198,14 @@ func _cmd_set_property(params: Dictionary) -> Dictionary:
 	return _ok({ "node": str(node.get_path()), "property": property, "value": Util.serialize_value(node.get(property)) })
 
 func _cmd_undo() -> Dictionary:
-	var ur := EditorInterface.get_undo_redo()
+	var ur := EditorInterface.get_editor_undo_redo()
 	if not ur.has_undo():
 		return _err("nothing to undo")
 	ur.undo()
 	return _ok({ "action": ur.get_current_action_name() })
 
 func _cmd_redo() -> Dictionary:
-	var ur := EditorInterface.get_undo_redo()
+	var ur := EditorInterface.get_editor_undo_redo()
 	if not ur.has_redo():
 		return _err("nothing to redo")
 	ur.redo()
