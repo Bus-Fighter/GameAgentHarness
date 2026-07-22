@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Server, Plug, Copy, Check, RefreshCw, Cable } from "lucide-react";
+import { Server, Plug, Copy, Check, RefreshCw, Cable, Cpu } from "lucide-react";
 import { PanelHeaderActions } from "./PanelHeaderActions";
-import { startMcp, stopMcp, fetchMcpIdeConfigs, installMcpConfig } from "../api";
-import type { McpStatus, McpIdeConfig } from "../types";
+import { startMcp, stopMcp, fetchMcpIdeConfigs, installMcpConfig, fetchGodotProcesses, killGodotProcess } from "../api";
+import type { McpStatus, McpIdeConfig, GodotProcessInfo } from "../types";
 
 interface McpPanelProps {
   status: McpStatus | null;
@@ -86,8 +86,53 @@ export function McpPanel({ status, onRefresh }: McpPanelProps) {
   const [ides, setIdes] = useState<McpIdeConfig[]>([]);
   const [installStates, setInstallStates] = useState<Record<string, InstallState>>({});
   const [now, setNow] = useState(Date.now());
+  const [procCollapsed, setProcCollapsed] = useState(false);
+  const [processes, setProcesses] = useState<GodotProcessInfo[] | null>(null);
+  const [procError, setProcError] = useState<string | null>(null);
+  const [procLoading, setProcLoading] = useState(false);
+  const [confirmKillPid, setConfirmKillPid] = useState<number | null>(null);
+  const [killPendingPid, setKillPendingPid] = useState<number | null>(null);
 
   const running = status?.running ?? false;
+
+  const loadProcesses = useCallback(async () => {
+    setProcLoading(true);
+    setProcError(null);
+    try {
+      const res = await fetchGodotProcesses();
+      setProcesses(res.processes);
+    } catch (err) {
+      setProcError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProcLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProcesses();
+  }, [loadProcesses]);
+
+  const handleKill = useCallback(
+    async (pid: number) => {
+      if (confirmKillPid !== pid) {
+        setConfirmKillPid(pid);
+        return;
+      }
+      setConfirmKillPid(null);
+      setKillPendingPid(pid);
+      setProcError(null);
+      try {
+        const res = await killGodotProcess(pid);
+        if (!res.ok) setProcError(res.error || `Failed to kill pid ${pid}`);
+        await loadProcesses();
+      } catch (err) {
+        setProcError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setKillPendingPid(null);
+      }
+    },
+    [confirmKillPid, loadProcesses],
+  );
 
   const loadIdeConfigs = useCallback(async () => {
     try {
@@ -235,6 +280,82 @@ export function McpPanel({ status, onRefresh }: McpPanelProps) {
                 The MCP server is stopped. Start it to expose harness tools to IDE agents.
               </div>
             )}
+          </div>
+        </div>
+      </section>
+
+      <section className="card overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">
+            <Cpu className="h-4 w-4" />
+            Godot Processes
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={loadProcesses}
+              disabled={procLoading}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[0.7rem] font-semibold text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${procLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+            <PanelHeaderActions collapsed={procCollapsed} onToggleCollapse={() => setProcCollapsed((v) => !v)} allowFullscreen={false} />
+          </div>
+        </div>
+        <div
+          className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${
+            procCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+          }`}
+        >
+          <div className="grid grid-cols-1 gap-2 overflow-hidden p-3">
+            {procError && (
+              <div className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[var(--danger-dim)] p-2.5 text-xs text-[var(--danger)]">
+                {procError}
+              </div>
+            )}
+            {processes == null && !procError && (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2.5 text-xs text-[var(--muted)]">
+                {procLoading ? "Scanning..." : "No scan yet."}
+              </div>
+            )}
+            {processes != null && processes.length === 0 && (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2.5 text-xs text-[var(--muted)]">
+                No running Godot processes found (includes editors and games not started by the harness).
+              </div>
+            )}
+            {processes?.map((proc) => (
+              <div key={proc.pid} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`inline-flex flex-shrink-0 items-center rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold ${
+                      proc.kind === "editor"
+                        ? "border-[rgba(34,197,94,0.3)] bg-[var(--accent-dim)] text-[var(--accent)]"
+                        : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]"
+                    }`}
+                  >
+                    {proc.kind}
+                  </span>
+                  <span className="text-xs font-medium text-[var(--text)]">PID {proc.pid}</span>
+                  <span className="truncate text-[0.7rem] text-[var(--muted)]" title={proc.cmdline}>
+                    {proc.projectPath ?? proc.exe ?? proc.cmdline}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleKill(proc.pid)}
+                  disabled={killPendingPid === proc.pid}
+                  className={`inline-flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[0.7rem] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    confirmKillPid === proc.pid
+                      ? "border-[rgba(239,68,68,0.5)] bg-[var(--danger-dim)] text-[var(--danger)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--danger)] hover:text-[var(--danger)]"
+                  }`}
+                >
+                  {killPendingPid === proc.pid ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {killPendingPid === proc.pid ? "Killing..." : confirmKillPid === proc.pid ? "Confirm kill" : "Kill"}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </section>

@@ -8,6 +8,7 @@ import type {
   SearchResponse,
   McpStatus,
   McpIdeConfigsResponse,
+  GodotProcessInfo,
 } from "./types";
 
 const API_BASE = "/api";
@@ -148,6 +149,20 @@ export async function stopMcp(): Promise<McpStatus> {
 
 export async function fetchMcpIdeConfigs(): Promise<McpIdeConfigsResponse> {
   return apiGet<McpIdeConfigsResponse>("/mcp/ide-configs");
+}
+
+export async function fetchGodotProcesses(projectOnly = false): Promise<{ processes: GodotProcessInfo[] }> {
+  return apiGet<{ processes: GodotProcessInfo[] }>("/godot-processes" + (projectOnly ? "?project=1" : ""));
+}
+
+export async function killGodotProcess(pid: number, force = false): Promise<{ ok: boolean; pid?: number; error?: string }> {
+  const res = await fetch(API_BASE + "/godot-processes/kill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pid, force }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
 }
 
 export async function installMcpConfig(ide: string): Promise<{ ok: boolean; path?: string; backupPath?: string; error?: string }> {

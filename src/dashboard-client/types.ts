@@ -243,6 +243,14 @@ export interface McpIdeConfigsResponse {
   ides: McpIdeConfig[];
 }
 
+export interface GodotProcessInfo {
+  pid: number;
+  exe: string | null;
+  kind: "editor" | "game";
+  projectPath: string | null;
+  cmdline: string;
+}
+
 export interface ControlMessage {
   kind: "control";
   action: string;

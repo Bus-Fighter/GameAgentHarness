@@ -11,6 +11,7 @@ import { getLanIp } from "../core/network.js";
 import { listTools as listMcpTools, dispatch as dispatchMcpTool } from "../mcp/registry.js";
 import { createHttpHandler } from "../mcp/mcp-server.js";
 import { installIdeConfig, listIdeConfigs } from "../mcp/ide-configs.js";
+import { findGodotProcesses, killGodotProcess } from "../mcp/process-scan.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
@@ -307,6 +308,39 @@ export class DashboardServer {
 
     if (pathname === "/mcp") {
       this.handleMcpRequest(req, res);
+      return;
+    }
+
+    if (pathname === "/api/godot-processes") {
+      const filterProject = url.searchParams.get("project") === "1";
+      findGodotProcesses({ projectRoot: filterProject ? this.projectRoot : null })
+        .then((processes) => json(res, { processes }))
+        .catch((error) => json(res, { error: error.message }, 500));
+      return;
+    }
+
+    if (pathname === "/api/godot-processes/kill") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        let parsed;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          json(res, { ok: false, error: "invalid json" }, 400);
+          return;
+        }
+        killGodotProcess(parsed.pid, { force: parsed.force === true })
+          .then((result) => json(res, { ok: true, ...result }))
+          .catch((error) => json(res, { ok: false, error: error.message }, 400));
+      });
       return;
     }
 

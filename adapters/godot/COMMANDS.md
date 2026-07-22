@@ -58,6 +58,7 @@ Functional wherever the adapter client runs inside a scene tree (runtime recorde
 | `game.input_action` | `{ action, pressed? }` | `{ action, pressed }` via `Input.action_press/release` |
 | `game.input_text` | `{ text }` | `{ length }` — press/release key events per character |
 | `game.get_performance` | — | `{ fps, frameTimeMs, physicsFrameTimeMs, memoryStaticBytes, memoryStaticMaxBytes, objectCount, nodeCount }` |
+| `game.quit` | `{ exit_code? }` | `{ quitting, exitCode }` — gracefully quits the running game via `SceneTree.quit()` |
 | `game.screenshot` | `{ persist? }` | `{ width, height, format: "jpeg", persist }` — also sends a `{ kind: "frame", format: "jpeg", source: "bridge", persist }` frame message over the socket |
 | `game.console_list` | — | `{ commands: [string] }` — all registered CommandService commands (scopes flattened with space separators) |
 | `game.console_exec` | `{ input }` | `{ success, logs: [{ message, level }], events: [{ command, success, error }] }` — executes via the game's `CommandService`; bridge exceptions surface as `{ success: false, error }` |

@@ -33,6 +33,8 @@ func dispatch(command: String, params: Dictionary) -> Dictionary:
 			return _cmd_input_text(params)
 		"get_performance":
 			return _cmd_get_performance()
+		"quit":
+			return _cmd_quit(params)
 		"screenshot":
 			return _cmd_screenshot(params)
 		"console_list":
@@ -282,6 +284,11 @@ func _cmd_get_performance() -> Dictionary:
 		"objectCount": Performance.get_monitor(Performance.OBJECT_COUNT),
 		"nodeCount": Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 	})
+
+func _cmd_quit(params: Dictionary) -> Dictionary:
+	var exit_code := int(params.get("exit_code", 0))
+	_client.get_tree().quit(exit_code)
+	return _ok({ "quitting": true, "exitCode": exit_code })
 
 func _cmd_screenshot(params: Dictionary) -> Dictionary:
 	var viewport := _client.get_tree().root
