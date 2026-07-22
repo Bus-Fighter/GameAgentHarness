@@ -14,8 +14,10 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { InspectPanel } from "./components/InspectPanel";
 import { LiveActivityStrip } from "./components/LiveActivityStrip";
 import { DocksPanel } from "./components/DocksPanel";
+import { McpPanel } from "./components/McpPanel";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSettings } from "./hooks/useSettings";
+import { useMcpStatus } from "./hooks/useMcpStatus";
 import { isMobilePointer } from "./utils/detectMobile";
 import { fetchStatus, fetchScenes } from "./api";
 import type {
@@ -462,6 +464,7 @@ export default function App() {
   );
 
   const { connected, mode, error, reconnect, send } = useWebSocket(handleMessage);
+  const { status: mcpStatus, refresh: refreshMcpStatus } = useMcpStatus();
 
   const sendControl = useCallback(
     (action: string, extra: Record<string, unknown> = {}) => {
@@ -806,6 +809,10 @@ export default function App() {
         startTransition(() => setActiveTab("files"));
         return;
       }
+      if (e.key === "6") {
+        startTransition(() => setActiveTab("mcp"));
+        return;
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -897,6 +904,8 @@ export default function App() {
         paused={paused}
         onReconnect={reconnect}
         onOpenSettings={() => startTransition(() => setSettingsOpen(true))}
+        mcpRunning={mcpStatus?.running ?? false}
+        onOpenMcp={() => startTransition(() => setActiveTab("mcp"))}
       />
       {activeTab === "live" && (
         <TabPanel>
@@ -997,6 +1006,11 @@ export default function App() {
             onNodeSelect={handleNodeSelect}
             onRefreshSceneTree={handleRefreshSceneTree}
           />
+        </TabPanel>
+      )}
+      {activeTab === "mcp" && (
+        <TabPanel>
+          <McpPanel status={mcpStatus} onRefresh={refreshMcpStatus} />
         </TabPanel>
       )}
       <MobileTabs activeTab={activeTab} onChange={handleTabChange} />

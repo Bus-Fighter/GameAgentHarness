@@ -3,6 +3,8 @@ extends Node
 
 class_name GameAgentHarnessClient
 
+const CommandRouterScript := preload("res://addons/game_agent_harness/command_router.gd")
+
 const DEFAULT_URL := "ws://127.0.0.1:8765"
 const RECONNECT_DELAY_SECONDS := 2.0
 const DEFAULT_MAX_FRAME_DIMENSION := 640
@@ -18,6 +20,7 @@ var project_root := ""
 var _reconnect_timer := 0.0
 var _should_reconnect := true
 var _deduplicate_frames := true
+var _command_router: RefCounted = null
 var _LOG_LEVELS := { "debug": 0, "info": 1, "warning": 2, "error": 3, "off": 4 }
 
 func _ready() -> void:
@@ -201,6 +204,9 @@ func _handle_host_message(message: Variant) -> void:
 func _handle_control_message(message: Dictionary) -> void:
 	var action := str(message.get("action", ""))
 	_log_debug("client received control: %s" % action)
+	if action == "cmd":
+		_handle_command_message(message)
+		return
 	if action == "runtime_capture":
 		_set_capture_enabled("runtime_capture_enabled", bool(message.get("enabled", true)))
 	elif action == "frame_deduplication":
@@ -212,6 +218,11 @@ func _handle_control_message(message: Dictionary) -> void:
 		parent._on_harness_control(message)
 	else:
 		_log_debug("no parent handler for control: %s" % action)
+
+func _handle_command_message(message: Dictionary) -> void:
+	if _command_router == null:
+		_command_router = CommandRouterScript.new(self)
+	_command_router.handle_command(message)
 
 func _set_frame_deduplication(enabled: bool) -> void:
 	_deduplicate_frames = enabled

@@ -4,7 +4,11 @@ import { buildSummary } from "../core/summary-builder.js";
 import { WebSocketServer } from "./websocket-server.js";
 import { DashboardServer } from "../dashboard/dashboard-server.js";
 import { FrameStore } from "../dashboard/frame-store.js";
+import { EngineBridge } from "../mcp/bridge.js";
+import { dispatch as dispatchMcpTool } from "../mcp/registry.js";
+import { processManager as mcpProcessManager } from "../mcp/operations/execution.js";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 export class HarnessHost {
   constructor({
@@ -29,6 +33,16 @@ export class HarnessHost {
       onClose: () => {},
     });
     this.frameStore = new FrameStore();
+    this.mcpState = { running: false, startedAt: null, clientRequests: 0 };
+    this.mcpBridge = new EngineBridge({ harnessHost: this });
+    this.mcpCtx = {
+      godotPath: null,
+      projectRoot: this.projectRoot,
+      traceDir,
+      profile: null,
+      bridge: this.mcpBridge,
+      processManager: mcpProcessManager,
+    };
     this.dashboard = dashboard
       ? new DashboardServer({
           host: dashboardHost,
@@ -39,10 +53,21 @@ export class HarnessHost {
           engineClientCount: () => this.server.clients.size,
           lastEngineAt: () => this.lastEngineAt,
           onControlMessage: (message) => this.forwardControlToEngine(message),
+          mcpHooks: {
+            getStatus: () => this.getMcpStatus(),
+            start: () => this.startMcp(),
+            stop: () => this.stopMcp(),
+            getCtx: () => this.mcpCtx,
+            dispatch: (name, args, ctx) => {
+              this.mcpState.clientRequests += 1;
+              return dispatchMcpTool(name, args, ctx);
+            },
+          },
         })
       : null;
     this.liveFrameSeq = 0;
     this.lastEngineAt = null;
+    this.pendingCommands = new Map();
   }
 
   async start() {
@@ -54,6 +79,11 @@ export class HarnessHost {
   }
 
   stop() {
+    for (const [id, pending] of this.pendingCommands) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("host stopped"));
+      this.pendingCommands.delete(id);
+    }
     this.trace?.stop();
     if (this.trace) {
       buildSummary(this.store, this.trace.traceId);
@@ -80,6 +110,18 @@ export class HarnessHost {
       message = JSON.parse(text);
     } catch (error) {
       this.server.send(socket, { kind: "host.error", error: `Invalid JSON: ${error.message}` });
+      return;
+    }
+
+    if (message.type === "cmd.result" && typeof message.id === "string" && this.pendingCommands.has(message.id)) {
+      const pending = this.pendingCommands.get(message.id);
+      this.pendingCommands.delete(message.id);
+      clearTimeout(pending.timer);
+      if (message.ok) {
+        pending.resolve(message.data ?? null);
+      } else {
+        pending.reject(new Error(message.error ?? "engine command failed"));
+      }
       return;
     }
 
@@ -185,7 +227,69 @@ export class HarnessHost {
     }
   }
 
+  hasEngine() {
+    return this.server.clients.size > 0;
+  }
+
+  startMcp() {
+    if (!this.mcpState.running) {
+      this.mcpState.running = true;
+      this.mcpState.startedAt = new Date().toISOString();
+    }
+    return this.getMcpStatus();
+  }
+
+  stopMcp() {
+    this.mcpState.running = false;
+    return this.getMcpStatus();
+  }
+
+  getMcpStatus() {
+    return {
+      running: this.mcpState.running,
+      startedAt: this.mcpState.startedAt,
+      clientRequests: this.mcpState.clientRequests,
+    };
+  }
+
+  sendEngineCommand(domain, command, params = {}, { timeoutMs = 15000, excludeSocket = null } = {}) {
+    return new Promise((resolve, reject) => {
+      if (!this.hasEngine()) {
+        reject(new Error("no engine connected"));
+        return;
+      }
+      const id = randomUUID();
+      const timer = setTimeout(() => {
+        if (this.pendingCommands.delete(id)) {
+          reject(new Error(`engine command ${domain}.${command} timed out after ${timeoutMs}ms`));
+        }
+      }, Number(timeoutMs) || 15000);
+      this.pendingCommands.set(id, { resolve, reject, timer });
+      const payload = { kind: "control", action: "cmd", id, domain, command, params };
+      for (const client of this.server.clients) {
+        if (client === excludeSocket) continue;
+        try {
+          this.server.send(client, payload);
+        } catch {}
+      }
+    });
+  }
+
   handleControl(socket, message) {
+    if (message.action === "cmd") {
+      this.sendEngineCommand(message.domain, message.command, message.params ?? {}, {
+        timeoutMs: Number(message.timeoutMs) || 15000,
+        excludeSocket: socket,
+      })
+        .then((data) => {
+          this.server.send(socket, { kind: "control.result", ok: true, id: message.id ?? null, data });
+        })
+        .catch((error) => {
+          this.server.send(socket, { kind: "control.result", ok: false, id: message.id ?? null, error: error.message });
+        });
+      return;
+    }
+
     if (message.action === "trace.start") {
       if (!this.trace || this.trace.endedAt) {
         this.trace = new TraceSession(this.store, { context: message.context ?? null });

@@ -1,4 +1,4 @@
-import { Monitor, Zap, Image, FileText, Search, LayoutGrid } from "lucide-react";
+import { Monitor, Zap, Image, FileText, Search, LayoutGrid, Plug } from "lucide-react";
 
 interface MobileTabsProps {
   activeTab: string;
@@ -12,6 +12,7 @@ const TABS = [
   { id: "docks", label: "Docks", icon: LayoutGrid },
   { id: "inspect", label: "Inspect", icon: Search },
   { id: "files", label: "Files", icon: FileText },
+  { id: "mcp", label: "MCP", icon: Plug },
 ];
 
 export function MobileTabs({ activeTab, onChange }: MobileTabsProps) {

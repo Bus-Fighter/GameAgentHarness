@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ArtifactStore } from "../src/core/artifact-store.js";
 import { buildCurrentContext } from "../src/core/context-builder.js";
 import { loadProfile } from "../src/core/profile.js";
@@ -40,7 +41,7 @@ test("TraceSession writes routed JSONL artifacts", () => {
 
 test("profile, context, and validation work against the generic test field", () => {
   const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gah-test-field-"));
-  const profile = loadProfile(new URL("../examples/test-field.profile.json", import.meta.url).pathname);
+  const profile = loadProfile(fileURLToPath(new URL("../examples/test-field.profile.json", import.meta.url)));
   const scenario = JSON.parse(fs.readFileSync(new URL("../examples/test-field.validation.json", import.meta.url), "utf8"));
   const created = createTestFieldTrace({ traceDir: traceRoot });
   const store = new ArtifactStore(traceRoot);

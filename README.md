@@ -1,10 +1,9 @@
 # Game Agent Harness
 
 Game Agent Harness is a trace-first runtime evidence harness for game
-development agents.
+development agents, and an MCP server for driving the Godot editor/runtime.
 
-It is not a Godot MCP server. MCP can be added as one client adapter later. The
-core product is the local evidence pipeline:
+The core product is the local evidence pipeline:
 
 ```text
 engine plugin -> harness host -> trace artifacts -> CLI/MCP/agent summary
@@ -59,6 +58,20 @@ Summarize the latest trace:
 ```bash
 npm run summary
 ```
+
+## MCP Server
+
+The harness exposes 130+ Godot/harness tools over MCP, via the dashboard's
+HTTP endpoint (`http://127.0.0.1:8766/mcp`, press **Start** in the dashboard)
+or standalone stdio:
+
+```bash
+node ./src/cli.js mcp serve --project-root /path/to/GodotProject
+node ./src/cli.js godot tools   # list tools; godot <tool> runs one from the CLI
+```
+
+Full tool inventory, IDE configs, custom tools, and the safety model:
+[`docs/MCP.md`](docs/MCP.md).
 
 ## Agent-Friendly CLI
 
@@ -162,6 +175,6 @@ The JSON schemas live under `schemas/`.
 This project is engine-neutral at the host/core layer. Godot is only the first
 adapter. CatSweeper is only an example target project.
 
-The core framework is now CLI/artifact-first. A future MCP adapter should wrap
-these same profile, trace, context, and validation APIs rather than replace
-them.
+The core framework is CLI/artifact-first; the MCP server wraps these same
+profile, trace, context, validation, and Godot APIs rather than replacing
+them. See [`docs/MCP.md`](docs/MCP.md).

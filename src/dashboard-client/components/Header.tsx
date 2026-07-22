@@ -1,4 +1,4 @@
-import { Layers, Settings } from "lucide-react";
+import { Layers, Settings, Plug } from "lucide-react";
 
 interface HeaderProps {
   connected: boolean;
@@ -7,8 +7,10 @@ interface HeaderProps {
   traceId: string | null;
   traceActive: boolean;
   paused: boolean;
+  mcpRunning: boolean;
   onReconnect: () => void;
   onOpenSettings: () => void;
+  onOpenMcp: () => void;
 }
 
 export function Header({
@@ -18,8 +20,10 @@ export function Header({
   traceId,
   traceActive,
   paused,
+  mcpRunning,
   onReconnect,
   onOpenSettings,
+  onOpenMcp,
 }: HeaderProps) {
   const connectionText = connected
     ? mode === "fallback"
@@ -85,6 +89,19 @@ export function Header({
           <span className="h-1.5 w-1.5 rounded-full bg-current" />
           {engineConnected ? "Engine" : "No engine"}
         </span>
+        <button
+          type="button"
+          onClick={onOpenMcp}
+          className={`inline-flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-semibold ${
+            mcpRunning
+              ? "border-[rgba(34,197,94,0.3)] bg-[var(--accent-dim)] text-[var(--accent)]"
+              : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+          }`}
+          title="MCP server"
+        >
+          <Plug className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">MCP</span>
+        </button>
       </div>
     </header>
   );

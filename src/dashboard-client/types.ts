@@ -219,6 +219,30 @@ export interface FileContentResponse {
   content?: string;
 }
 
+export interface McpStatus {
+  running: boolean;
+  startedAt: string | null;
+  url: string | null;
+  transport: string;
+  toolCount: number;
+  engineConnected: boolean;
+}
+
+export interface McpIdeConfig {
+  id: string;
+  label: string;
+  configPath: string | null;
+  exists: boolean;
+  configured: boolean;
+  snippet: unknown;
+  altSnippet?: unknown;
+  installable: boolean;
+}
+
+export interface McpIdeConfigsResponse {
+  ides: McpIdeConfig[];
+}
+
 export interface ControlMessage {
   kind: "control";
   action: string;

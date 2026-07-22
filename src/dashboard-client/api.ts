@@ -6,6 +6,8 @@ import type {
   FileTreeResponse,
   FileContentResponse,
   SearchResponse,
+  McpStatus,
+  McpIdeConfigsResponse,
 } from "./types";
 
 const API_BASE = "/api";
@@ -126,6 +128,36 @@ export async function gitReset(path: string): Promise<void> {
     body: JSON.stringify({ path }),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+export async function fetchMcpStatus(): Promise<McpStatus> {
+  return apiGet<McpStatus>("/mcp/status");
+}
+
+export async function startMcp(): Promise<McpStatus> {
+  const res = await fetch(API_BASE + "/mcp/start", { method: "POST" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json() as Promise<McpStatus>;
+}
+
+export async function stopMcp(): Promise<McpStatus> {
+  const res = await fetch(API_BASE + "/mcp/stop", { method: "POST" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json() as Promise<McpStatus>;
+}
+
+export async function fetchMcpIdeConfigs(): Promise<McpIdeConfigsResponse> {
+  return apiGet<McpIdeConfigsResponse>("/mcp/ide-configs");
+}
+
+export async function installMcpConfig(ide: string): Promise<{ ok: boolean; path?: string; backupPath?: string; error?: string }> {
+  const res = await fetch(API_BASE + "/mcp/install-config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ide }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
 }
 
 export function getLiveFrameUrl(seq?: number, source?: string): string {

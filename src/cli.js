@@ -11,6 +11,8 @@ import { HarnessHost } from "./host/harness-host.js";
 import { emitSample } from "./dev/sample-events.js";
 import { createTestFieldTrace } from "./dev/test-field.js";
 import { installGodotAdapter } from "./godot/install-adapter.js";
+import { listTools as listMcpTools, dispatch as dispatchMcpTool } from "./mcp/registry.js";
+import { processManager as mcpProcessManager } from "./mcp/operations/execution.js";
 
 
 function parseArgs(argv) {
@@ -51,7 +53,11 @@ Usage:
   harness viewer export [latest|trace-id] --output /tmp/trace.html [--profile file] [--trace-dir traces] [--json]
   harness dev create-test-field [--trace-dir traces] [--json]
   harness dev emit-sample [--host 127.0.0.1] [--port 8765]
+  harness engine cmd <domain> <command> [--params '<json>'] [--host 127.0.0.1] [--port 8765]
   harness godot install-adapter --project /path/to/GodotProject
+  harness godot tools [--json]
+  harness godot <tool-name> [--key value ...] [--params-json '<json>'] [--json]
+  harness mcp serve [--project-root <path>] [--trace-dir traces] [--profile file]
 `);
 }
 
@@ -347,10 +353,110 @@ async function main() {
     return;
   }
 
+  if (group === "engine" && command === "cmd") {
+    const domain = target;
+    const engineCommand = args._[3];
+    if (!domain || !engineCommand) {
+      throw new Error("Usage: harness engine cmd <domain> <command> [--params '<json>']");
+    }
+    let params = {};
+    if (args.params) {
+      try {
+        params = JSON.parse(args.params);
+      } catch (error) {
+        throw new Error(`Invalid --params JSON: ${error.message}`);
+      }
+    }
+    const { EngineBridge } = await import("./mcp/bridge.js");
+    const bridge = new EngineBridge({
+      host: args.host ?? "127.0.0.1",
+      port: Number(args.port ?? 8765),
+    });
+    try {
+      const data = await bridge.cmd(domain, engineCommand, params, {
+        timeoutMs: Number(args.timeout ?? 15000),
+      });
+      printJson({ ok: true, data });
+    } catch (error) {
+      printJson({ ok: false, error: error.message });
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (group === "godot" && command === "install-adapter") {
     const target = installGodotAdapter(args.project);
     console.log(`Installed Godot adapter to ${target}`);
     console.log("Enable it in Godot: Project > Project Settings > Plugins.");
+    return;
+  }
+
+  if (group === "godot") {
+    if (!command || command === "tools") {
+      const tools = listMcpTools();
+      if (args.json) {
+        printJson(tools);
+      } else {
+        for (const tool of tools) {
+          console.log(`${tool.name} - ${tool.description.split("\n")[0]}`);
+        }
+      }
+      return;
+    }
+
+    const toolName = command.replace(/-/g, "_");
+    const toolArgs = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (key === "_" || key === "json" || key === "params-json") continue;
+      const argKey = key.replace(/-/g, "_");
+      if (value === "true") toolArgs[argKey] = true;
+      else if (value === "false") toolArgs[argKey] = false;
+      else if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) toolArgs[argKey] = Number(value);
+      else toolArgs[argKey] = value;
+    }
+    if (args["params-json"]) {
+      Object.assign(toolArgs, JSON.parse(args["params-json"]));
+    }
+
+    const ctx = {
+      godotPath: args["godot-path"] ?? null,
+      projectRoot: args["project-root"] ?? process.cwd(),
+      traceDir: args["trace-dir"] ?? "traces",
+      profile: loadCliProfile(args),
+      bridge: null,
+      processManager: mcpProcessManager,
+    };
+
+    const result = await dispatchMcpTool(toolName, toolArgs, ctx);
+    if (args.json) {
+      printJson(result);
+    } else {
+      for (const item of result.content) {
+        if (item.type === "text") {
+          console.log(item.text);
+        } else {
+          printJson(item);
+        }
+      }
+    }
+    if (result.isError) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (group === "mcp" && command === "serve") {
+    const { serveStdio } = await import("./mcp/mcp-server.js");
+    await serveStdio({
+      dispatch: dispatchMcpTool,
+      listTools: listMcpTools,
+      godotPath: args["godot-path"] ?? null,
+      projectRoot: args["project-root"] ?? process.cwd(),
+      traceDir: args["trace-dir"] ?? "traces",
+      profile: loadCliProfile(args),
+      bridge: null,
+      processManager: mcpProcessManager,
+    });
     return;
   }
 

@@ -8,6 +8,9 @@ import { ArtifactStore } from "../core/artifact-store.js";
 import { readTrace, resolveTraceId } from "../core/trace-reader.js";
 import { buildCurrentContext } from "../core/context-builder.js";
 import { getLanIp } from "../core/network.js";
+import { listTools as listMcpTools, dispatch as dispatchMcpTool } from "../mcp/registry.js";
+import { createHttpHandler } from "../mcp/mcp-server.js";
+import { installIdeConfig, listIdeConfigs } from "../mcp/ide-configs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "../../dist/dashboard");
@@ -129,7 +132,7 @@ function createContentMatcher(query, caseSensitive, wholeWord) {
 }
 
 export class DashboardServer {
-  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, editorManaged = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null } = {}) {
+  constructor({ host = "127.0.0.1", port = 8766, traceDir = "traces", projectRoot = process.cwd(), intakePort = 8765, engineClientCount = null, lastEngineAt = null, editorActive = null, editorManaged = null, onControlMessage = null, getRuntimeContext = null, onFlushTrace = null, profile = null, mcpHooks = null } = {}) {
     this.host = host;
     this.port = port;
     this.intakePort = intakePort;
@@ -149,6 +152,49 @@ export class DashboardServer {
     this.onControlMessage = onControlMessage;
     this.getRuntimeContext = getRuntimeContext;
     this.onFlushTrace = onFlushTrace;
+    this.mcpHooks = mcpHooks;
+    this.mcpHttpHandler = null;
+  }
+
+  getMcpUrl() {
+    return `http://${this.host === "0.0.0.0" ? getLanIp() : this.host}:${this.port}/mcp`;
+  }
+
+  getMcpHttpHandler() {
+    if (!this.mcpHttpHandler) {
+      const ctx = this.mcpHooks?.getCtx?.() ?? {
+        godotPath: null,
+        projectRoot: this.projectRoot,
+        traceDir: this.store.rootDir,
+        profile: this.profile,
+        bridge: null,
+        processManager: null,
+      };
+      const dispatch = this.mcpHooks?.dispatch ?? ((name, args, toolCtx) => dispatchMcpTool(name, args, toolCtx));
+      this.mcpHttpHandler = createHttpHandler({ dispatch, listTools: listMcpTools, ...ctx });
+    }
+    return this.mcpHttpHandler;
+  }
+
+  getMcpStatusPayload() {
+    const state = this.mcpHooks?.getStatus?.() ?? { running: false, startedAt: null, clientRequests: 0 };
+    return {
+      running: Boolean(state.running),
+      startedAt: state.startedAt ?? null,
+      clientRequests: state.clientRequests ?? 0,
+      url: this.getMcpUrl(),
+      transport: "streamable-http",
+      toolCount: listMcpTools().length,
+      engineConnected: (this.engineClientCount?.() ?? 0) > 0,
+    };
+  }
+
+  async closeMcpHttpHandler() {
+    if (this.mcpHttpHandler) {
+      const handler = this.mcpHttpHandler;
+      this.mcpHttpHandler = null;
+      await handler.close();
+    }
   }
 
   broadcastStatus() {
@@ -230,12 +276,19 @@ export class DashboardServer {
       } catch {}
     }
     this.mjpegClients.clear();
+    this.closeMcpHttpHandler();
     this.server?.close();
   }
 
   handleHttp(req, res) {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const pathname = url.pathname;
+
+    if (pathname === "/favicon.ico") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -249,6 +302,74 @@ export class DashboardServer {
 
     if (req.method === "POST" && pathname === "/api/control") {
       this.handleControlPost(req, res);
+      return;
+    }
+
+    if (pathname === "/mcp") {
+      this.handleMcpRequest(req, res);
+      return;
+    }
+
+    if (pathname === "/api/mcp/status") {
+      json(res, this.getMcpStatusPayload());
+      return;
+    }
+
+    if (pathname === "/api/mcp/start") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      this.mcpHooks?.start?.();
+      json(res, this.getMcpStatusPayload());
+      return;
+    }
+
+    if (pathname === "/api/mcp/stop") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      this.mcpHooks?.stop?.();
+      this.closeMcpHttpHandler();
+      json(res, this.getMcpStatusPayload());
+      return;
+    }
+
+    if (pathname === "/api/mcp/ide-configs") {
+      json(res, { ides: listIdeConfigs({ projectRoot: this.projectRoot, dashboardUrl: this.getMcpUrl() }) });
+      return;
+    }
+
+    if (pathname === "/api/mcp/install-config") {
+      if (req.method !== "POST") {
+        json(res, { ok: false, error: "method not allowed" }, 405);
+        return;
+      }
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        let parsed;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          json(res, { ok: false, error: "invalid json" }, 400);
+          return;
+        }
+        try {
+          const result = installIdeConfig({
+            ide: parsed.ide,
+            projectRoot: this.projectRoot,
+            dashboardUrl: this.getMcpUrl(),
+          });
+          json(res, result);
+        } catch (error) {
+          json(res, { ok: false, error: error.message }, 400);
+        }
+      });
       return;
     }
 
@@ -475,6 +596,34 @@ export class DashboardServer {
       } catch {}
     }
     this.sendSse(text);
+  }
+
+  handleMcpRequest(req, res) {
+    const running = Boolean(this.mcpHooks?.getStatus?.().running);
+    if (!running) {
+      json(res, { error: "MCP server not running" }, 503);
+      return;
+    }
+    const handler = this.getMcpHttpHandler();
+    if (req.method === "POST") {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        let parsed;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          json(res, { error: "invalid json" }, 400);
+          return;
+        }
+        handler.handle(req, res, parsed);
+      });
+      return;
+    }
+    handler.handle(req, res);
   }
 
   sendSse(text) {
